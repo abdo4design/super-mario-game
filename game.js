@@ -28,78 +28,32 @@ function makeGridBuilder(rows, cols) {
     }
     pipeLeftCols.add(colLeft);
   };
-  return { grid, set, setRange, placePipe, pipeLeftCols, rows, cols };
+  // Classic ascending staircase leading up to the flag. groundRow is the
+  // top row of solid ground (ROWS-2); each successive column gets one more
+  // block of height. Returns the column right after the tallest step, where
+  // the flag is typically planted.
+  const addStaircase = (startCol, steps, groundRow) => {
+    for (let i = 1; i <= steps; i++) {
+      const col = startCol + i - 1;
+      for (let r = groundRow - i; r < groundRow; r++) set(r, col, "G");
+    }
+    return startCol + steps;
+  };
+  return { grid, set, setRange, placePipe, addStaircase, pipeLeftCols, rows, cols };
 }
 
-function buildOverworld() {
-  const ROWS = 10;
-  const COLS = 150;
-  const b = makeGridBuilder(ROWS, COLS);
-  const blockContents = {};
-  const warpPipes = {};
-
-  b.setRange(ROWS - 2, 0, COLS - 1, "G");
-  b.setRange(ROWS - 1, 0, COLS - 1, "G");
-
-  // pits (gaps requiring a jump)
-  [[36, 38], [76, 78], [104, 106], [134, 136]].forEach(([c1, c2]) => {
+function pits(b, ROWS, ranges) {
+  ranges.forEach(([c1, c2]) => {
     for (let c = c1; c <= c2; c++) {
       b.set(ROWS - 2, c, ".");
       b.set(ROWS - 1, c, ".");
     }
   });
+}
 
-  // decor
-  [8, 40, 62, 80, 92, 110, 130, 145].forEach((c) => b.set(1, c, "c"));
-  [6, 30, 33, 63, 84, 100, 120, 140].forEach((c) => b.set(7, c, "H"));
-  [14, 66, 96, 118, 138].forEach((c) => b.set(7, c, "b"));
-
-  // pipes: plain obstacle pipes, one warp pipe into the underground room.
-  // Max jump height only clears a 2-tile pipe (a 3-tile pipe's top sits
-  // above the player's peak jump height and can never be jumped over), so
-  // every obstacle pipe here is capped at height 2.
-  b.placePipe(10, 6, 2);
-  b.placePipe(41, 6, 2);
-  b.placePipe(58, 6, 2);
-  warpPipes["58,6"] = { toWorld: "underground", spawn: { x: 2 * TILE, y: 5 * TILE } };
-  b.placePipe(92, 6, 2);
-  b.placePipe(122, 6, 2);
-
-  // Power-up cluster, placed early (right after the first pipe) so it's
-  // easy to reach on a first attempt: mushroom, then star, then fire flower.
-  b.set(4, 16, "?");
-  blockContents["16,4"] = "mushroom";
-  b.set(4, 18, "B");
-  b.set(4, 19, "?");
-  blockContents["19,4"] = "star";
-  b.set(4, 20, "B");
-  b.set(4, 21, "?");
-  blockContents["21,4"] = "fireflower";
-
-  // a plain bonus coin cluster further along
-  b.setRange(4, 49, 53, "B");
-  b.set(4, 49, "?");
-  b.set(4, 51, "?");
-  b.set(4, 53, "?");
-
-  // a second bonus cluster in the late-game stretch, with a 1-up
-  b.setRange(4, 112, 116, "B");
-  b.set(4, 112, "?");
-  b.set(4, 114, "?");
-  blockContents["114,4"] = "oneup";
-  b.set(4, 116, "?");
-
-  // goombas
-  [26, 51, 72, 98, 128].forEach((c) => b.set(7, c, "g"));
-
-  // player spawn
-  b.set(5, 2, "M");
-
-  // flagpole near the end
-  b.set(4, 146, "F");
-
+function finishOverworldLevel(id, b, ROWS, COLS, blockContents, warpPipes, flagCol) {
   return {
-    name: "overworld",
+    name: id,
     theme: "overworld",
     rows: b.grid.map((row) => row.join("")),
     ROWS,
@@ -108,9 +62,155 @@ function buildOverworld() {
     pipeLeftCols: b.pipeLeftCols,
     warpPipes,
     flagRow: 4,
-    flagCol: 146,
+    flagCol,
+    castleCol: flagCol + 3,
     entities: null,
   };
+}
+
+// World 1-1: the intro level. One mushroom, a warp pipe down to the
+// underground bonus room, and a short staircase up to the flag.
+function buildLevel1_1() {
+  const ROWS = 10;
+  const COLS = 120;
+  const b = makeGridBuilder(ROWS, COLS);
+  const blockContents = {};
+  const warpPipes = {};
+
+  b.setRange(ROWS - 2, 0, COLS - 1, "G");
+  b.setRange(ROWS - 1, 0, COLS - 1, "G");
+  pits(b, ROWS, [[30, 31], [80, 81]]);
+
+  [8, 40, 70, 95].forEach((c) => b.set(1, c, "c"));
+  [6, 25, 55, 85].forEach((c) => b.set(7, c, "H"));
+  [14, 45, 75].forEach((c) => b.set(7, c, "b"));
+
+  b.placePipe(10, 6, 2);
+  b.placePipe(60, 6, 2);
+  warpPipes["60,6"] = { toWorld: "underground", spawn: { x: 2 * TILE, y: 5 * TILE } };
+
+  b.set(4, 16, "?");
+  blockContents["16,4"] = "mushroom";
+  b.set(4, 18, "?");
+  b.set(4, 20, "?");
+
+  [24, 45, 70, 90].forEach((c) => b.set(7, c, "g"));
+
+  b.set(5, 2, "M");
+
+  const afterStairs = b.addStaircase(101, 4, ROWS - 2);
+  const flagCol = afterStairs + 2;
+  b.set(4, flagCol, "F");
+
+  return finishOverworldLevel("1-1", b, ROWS, COLS, blockContents, warpPipes, flagCol);
+}
+
+// World 1-2: a star power-up, and a tougher run of goombas.
+function buildLevel1_2() {
+  const ROWS = 10;
+  const COLS = 110;
+  const b = makeGridBuilder(ROWS, COLS);
+  const blockContents = {};
+  const warpPipes = {};
+
+  b.setRange(ROWS - 2, 0, COLS - 1, "G");
+  b.setRange(ROWS - 1, 0, COLS - 1, "G");
+  pits(b, ROWS, [[26, 27], [60, 61]]);
+
+  [10, 50, 80].forEach((c) => b.set(1, c, "c"));
+  [8, 40, 75].forEach((c) => b.set(7, c, "H"));
+  [20, 55].forEach((c) => b.set(7, c, "b"));
+
+  b.placePipe(12, 6, 2);
+  b.placePipe(70, 6, 2);
+
+  b.set(4, 18, "?");
+  blockContents["18,4"] = "star";
+  b.set(4, 20, "?");
+  b.set(4, 22, "?");
+
+  [24, 34, 50, 66, 85].forEach((c) => b.set(7, c, "g"));
+
+  b.set(5, 2, "M");
+
+  const afterStairs = b.addStaircase(91, 4, ROWS - 2);
+  const flagCol = afterStairs + 2;
+  b.set(4, flagCol, "F");
+
+  return finishOverworldLevel("1-2", b, ROWS, COLS, blockContents, warpPipes, flagCol);
+}
+
+// World 2-1: a fire flower, more pits close together, and more enemies.
+function buildLevel2_1() {
+  const ROWS = 10;
+  const COLS = 120;
+  const b = makeGridBuilder(ROWS, COLS);
+  const blockContents = {};
+  const warpPipes = {};
+
+  b.setRange(ROWS - 2, 0, COLS - 1, "G");
+  b.setRange(ROWS - 1, 0, COLS - 1, "G");
+  pits(b, ROWS, [[20, 21], [50, 51], [85, 86]]);
+
+  [15, 45, 75, 100].forEach((c) => b.set(1, c, "c"));
+  [10, 40, 70, 95].forEach((c) => b.set(7, c, "H"));
+  [25, 60, 90].forEach((c) => b.set(7, c, "b"));
+
+  b.placePipe(30, 6, 2);
+  b.placePipe(65, 6, 2);
+
+  b.set(4, 36, "?");
+  blockContents["36,4"] = "fireflower";
+  b.set(4, 38, "?");
+  b.set(4, 40, "?");
+
+  [15, 26, 42, 58, 74, 92].forEach((c) => b.set(7, c, "g"));
+
+  b.set(5, 2, "M");
+
+  const afterStairs = b.addStaircase(101, 4, ROWS - 2);
+  const flagCol = afterStairs + 2;
+  b.set(4, flagCol, "F");
+
+  return finishOverworldLevel("2-1", b, ROWS, COLS, blockContents, warpPipes, flagCol);
+}
+
+// World 2-2: the finale. A mushroom, a hidden 1-up, and the toughest gauntlet.
+function buildLevel2_2() {
+  const ROWS = 10;
+  const COLS = 130;
+  const b = makeGridBuilder(ROWS, COLS);
+  const blockContents = {};
+  const warpPipes = {};
+
+  b.setRange(ROWS - 2, 0, COLS - 1, "G");
+  b.setRange(ROWS - 1, 0, COLS - 1, "G");
+  pits(b, ROWS, [[18, 19], [40, 41], [64, 65], [96, 97]]);
+
+  [10, 35, 60, 85, 108].forEach((c) => b.set(1, c, "c"));
+  [8, 30, 55, 80, 103].forEach((c) => b.set(7, c, "H"));
+  [15, 45, 70, 92].forEach((c) => b.set(7, c, "b"));
+
+  b.placePipe(25, 6, 2);
+  b.placePipe(50, 6, 2);
+  b.placePipe(88, 6, 2);
+
+  b.set(4, 12, "?");
+  blockContents["12,4"] = "mushroom";
+
+  b.setRange(4, 74, 76, "B");
+  b.set(4, 75, "?");
+  blockContents["75,4"] = "oneup";
+
+  [16, 33, 47, 62, 78, 94, 106].forEach((c) => b.set(7, c, "g"));
+
+  b.set(5, 2, "M");
+
+  const afterStairs = b.addStaircase(111, 4, ROWS - 2);
+  const flagCol = afterStairs + 2;
+  b.set(4, flagCol, "F");
+
+  return finishOverworldLevel("2-2", b, ROWS, COLS, blockContents, warpPipes, flagCol);
 }
 
 function buildUnderground() {
@@ -132,8 +232,8 @@ function buildUnderground() {
 
   b.placePipe(13, ROWS - 4, 2);
   warpPipes[`13,${ROWS - 4}`] = {
-    toWorld: "overworld",
-    spawn: { x: 61 * TILE, y: 5 * TILE },
+    toWorld: "1-1",
+    spawn: { x: 63 * TILE, y: 5 * TILE },
   };
 
   return {
@@ -152,11 +252,16 @@ function buildUnderground() {
 }
 
 const WORLD_REGISTRY = {}; // populated by initWorlds(): name -> world object
+const LEVEL_ORDER = ["1-1", "1-2", "2-1", "2-2"];
+let levelIndex = 0; // index into LEVEL_ORDER for the level currently being played
 let world; // active world
 let ROWS, COLS, LEVEL_ROWS, LEVEL_PIXEL_WIDTH, LEVEL_PIXEL_HEIGHT;
 
 function initWorlds() {
-  WORLD_REGISTRY.overworld = buildOverworld();
+  WORLD_REGISTRY["1-1"] = buildLevel1_1();
+  WORLD_REGISTRY["1-2"] = buildLevel1_2();
+  WORLD_REGISTRY["2-1"] = buildLevel2_1();
+  WORLD_REGISTRY["2-2"] = buildLevel2_2();
   WORLD_REGISTRY.underground = buildUnderground();
 }
 
@@ -170,7 +275,7 @@ function applyWorld(w) {
 }
 
 initWorlds();
-applyWorld(WORLD_REGISTRY.overworld);
+applyWorld(WORLD_REGISTRY[LEVEL_ORDER[0]]);
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -357,10 +462,15 @@ function newPlayerAt(spawn) {
   };
 }
 
-function buildLevel() {
-  // Fresh run / respawn: reset the overworld's entities and start clean.
-  WORLD_REGISTRY.overworld.entities = null;
-  applyWorld(WORLD_REGISTRY.overworld);
+// Loads LEVEL_ORDER[levelIndex] fresh (undoing any broken blocks / defeated
+// enemies from a previous attempt) and makes it the active world. Returns
+// the level's spawn point; does not touch the player object itself, so
+// callers can decide whether to reset the player or carry state forward.
+function loadCurrentLevel() {
+  const id = LEVEL_ORDER[levelIndex];
+  const lvl = WORLD_REGISTRY[id];
+  lvl.entities = null;
+  applyWorld(lvl);
   const ent = populateEntities(world);
   world.entities = { blocks: ent.blocks, goombas: ent.goombas };
   blocks = ent.blocks;
@@ -370,7 +480,27 @@ function buildLevel() {
   fireballs = [];
   textPops = [];
   warpCooldown = 0;
-  player = newPlayerAt(ent.spawn);
+  camX = 0;
+  worldEl.textContent = id;
+  return ent.spawn;
+}
+
+function buildLevel() {
+  // Fresh run / respawn: reload the current level and reset the player.
+  const spawn = loadCurrentLevel();
+  player = newPlayerAt(spawn);
+}
+
+function advanceToNextLevel() {
+  levelIndex++;
+  const spawn = loadCurrentLevel();
+  const keptForm = player.form;
+  player = newPlayerAt(spawn);
+  player.form = keptForm;
+  if (keptForm !== "small") player.h = PLAYER_BIG_H;
+  timeLeft = 400;
+  timeAccum = 0;
+  state = "playing";
 }
 
 function warpTo(targetWorldName, spawn) {
@@ -385,6 +515,7 @@ function warpTo(targetWorldName, spawn) {
   applyWorld(target);
   blocks = target.entities.blocks;
   goombas = target.entities.goombas;
+  if (LEVEL_ORDER.includes(target.name)) worldEl.textContent = target.name;
 
   powerups = [];
   fireballs = [];
@@ -454,6 +585,7 @@ function startGame() {
   coins = 0;
   lives = 3;
   timeLeft = 400;
+  levelIndex = 0;
   buildLevel();
   state = "playing";
   titleScreen.classList.add("hidden");
@@ -761,7 +893,8 @@ function update(dt) {
   }
   particles = particles.filter((p) => p.t < (p.kind === "debris" ? 0.9 : 0.6));
 
-  // Win condition: reach flag column
+  // Win condition: reach flag column. Every level but the last advances to
+  // the next one; the last shows the final "course clear" overlay.
   const flagCol = world.flagCol;
   if (flagCol > -1 && player.x > flagCol * TILE && !player.won && !player.dead) {
     player.won = true;
@@ -769,8 +902,12 @@ function update(dt) {
     score += 1000;
     sfx.win();
     setTimeout(() => {
-      state = "win";
-      showWinOverlay();
+      if (levelIndex + 1 < LEVEL_ORDER.length) {
+        advanceToNextLevel();
+      } else {
+        state = "win";
+        showWinOverlay();
+      }
     }, 600);
   }
 
@@ -875,6 +1012,7 @@ function draw() {
 
   drawBackground();
   drawTiles();
+  drawCastle();
   drawBlocks();
   drawFlag();
   drawParticles();
@@ -1043,6 +1181,68 @@ function drawFlag() {
   ctx.moveTo(x, topY + 6);
   ctx.lineTo(x + 24, topY + 14);
   ctx.lineTo(x, topY + 22);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawCastle() {
+  const col = world.castleCol;
+  if (col === undefined || col < 0) return;
+  const groundY = (ROWS - 2) * TILE;
+  const x = col * TILE;
+  const bodyW = TILE * 4;
+  const bodyH = TILE * 2.5;
+  const bodyY = groundY - bodyH;
+  const brick = "#9a9a9a";
+  const brickDark = "#6c6c6c";
+  const towerW = TILE;
+  const towerH = TILE * 1;
+
+  ctx.fillStyle = brick;
+  ctx.fillRect(x, bodyY, bodyW, bodyH);
+  ctx.strokeStyle = brickDark;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, bodyY + 1, bodyW - 2, bodyH - 2);
+
+  // side towers, taller than the main body
+  [x - towerW * 0.3, x + bodyW - towerW * 0.7].forEach((tx) => {
+    ctx.fillStyle = brick;
+    ctx.fillRect(tx, bodyY - towerH, towerW, towerH + bodyH);
+    ctx.strokeRect(tx + 1, bodyY - towerH + 1, towerW - 2, towerH + bodyH - 2);
+    // crenellations
+    ctx.fillStyle = brickDark;
+    for (let i = 0; i < 3; i++) {
+      if (i % 2 === 0) ctx.fillRect(tx + i * (towerW / 3), bodyY - towerH, towerW / 3 - 2, 6);
+    }
+  });
+
+  // main body crenellations
+  ctx.fillStyle = brickDark;
+  for (let i = 0; i < 5; i++) {
+    if (i % 2 === 0) ctx.fillRect(x + i * (bodyW / 5), bodyY, bodyW / 5 - 2, 6);
+  }
+
+  // door
+  ctx.fillStyle = "#2b1608";
+  const doorW = TILE * 0.7;
+  const doorH = TILE * 1.1;
+  ctx.beginPath();
+  ctx.arc(x + bodyW / 2, bodyY + bodyH - doorH, doorW / 2, Math.PI, 0);
+  ctx.fill();
+  ctx.fillRect(x + bodyW / 2 - doorW / 2, bodyY + bodyH - doorH, doorW, doorH);
+
+  // flag on the center tower
+  ctx.strokeStyle = brickDark;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x + bodyW / 2, bodyY - towerH - 14);
+  ctx.lineTo(x + bodyW / 2, bodyY - towerH);
+  ctx.stroke();
+  ctx.fillStyle = "#e2382c";
+  ctx.beginPath();
+  ctx.moveTo(x + bodyW / 2, bodyY - towerH - 14);
+  ctx.lineTo(x + bodyW / 2 + 14, bodyY - towerH - 9);
+  ctx.lineTo(x + bodyW / 2, bodyY - towerH - 4);
   ctx.closePath();
   ctx.fill();
 }
@@ -1228,6 +1428,5 @@ function loop(t) {
   requestAnimationFrame(loop);
 }
 
-worldEl.textContent = "1-1";
 buildLevel();
 requestAnimationFrame(loop);
