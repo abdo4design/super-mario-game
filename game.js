@@ -10,6 +10,10 @@ const TILE = 32;
 const ROWS = 10;
 const COLS = 92;
 
+// Maps "col,row" -> what a '?' block contains when hit. Blocks not listed
+// here (and any '?' whose special content was already claimed) pop a coin.
+const BLOCK_CONTENTS = {};
+
 function buildLevelRows() {
   const grid = Array.from({ length: ROWS }, () => Array(COLS).fill("."));
   const set = (r, c, ch) => {
@@ -34,10 +38,14 @@ function buildLevelRows() {
 
   // question blocks and bricks
   set(4, 20, "?");
+  BLOCK_CONTENTS["20,4"] = "mushroom";
+
   setRange(4, 49, 53, "B");
-  set(4, 51, "?");
   set(4, 49, "?");
+  set(4, 51, "?");
+  BLOCK_CONTENTS["51,4"] = "star";
   set(4, 53, "?");
+  BLOCK_CONTENTS["53,4"] = "fireflower";
 
   // goombas
   [21, 51, 72].forEach((c) => set(7, c, "g"));
@@ -100,10 +108,29 @@ const sfx = {
   bump: () => beep(140, 0.08, "square"),
   die: () => beep(90, 0.5, "sawtooth"),
   win: () => beep(660, 0.4, "triangle"),
+  powerup: () => {
+    beep(523, 0.09, "square");
+    setTimeout(() => beep(659, 0.09, "square"), 90);
+    setTimeout(() => beep(784, 0.15, "square"), 180);
+  },
+  star: () => {
+    beep(660, 0.07, "square");
+    setTimeout(() => beep(880, 0.07, "square"), 70);
+    setTimeout(() => beep(1046, 0.1, "square"), 140);
+  },
+  fire: () => beep(740, 0.08, "sawtooth", 0.06),
+  shrink: () => beep(200, 0.3, "sawtooth"),
+  break: () => beep(160, 0.1, "square"),
+  oneup: () => {
+    beep(784, 0.08, "square");
+    setTimeout(() => beep(988, 0.08, "square"), 80);
+    setTimeout(() => beep(1318, 0.16, "square"), 160);
+  },
 };
 
 // ---------- Input ----------
 const keys = {};
+let wantShoot = false;
 window.addEventListener("keydown", (e) => {
   keys[e.code] = true;
   if (e.code === "Enter") {
@@ -112,6 +139,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.code === "KeyP") togglePause();
   if (e.code === "KeyM") toggleSound();
+  if (e.code === "ControlLeft" || e.code === "ControlRight" || e.code === "KeyX") wantShoot = true;
   if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) {
     e.preventDefault();
   }
@@ -157,12 +185,19 @@ let timeAccum = 0;
 let lastTime = 0;
 let camX = 0;
 
-let player, goombas, blocks, particles;
+const PLAYER_W = 24;
+const PLAYER_SMALL_H = 30;
+const PLAYER_BIG_H = 42;
+
+let player, goombas, blocks, particles, powerups, fireballs, textPops;
 
 function buildLevel() {
   goombas = [];
-  blocks = []; // dynamic block state: {x,y,type,hit,bumpT}
+  blocks = []; // dynamic block state: {x,y,type,hit,bumpT,content}
   particles = [];
+  powerups = [];
+  fireballs = [];
+  textPops = [];
   let spawn = { x: 2 * TILE, y: 5 * TILE };
 
   for (let r = 0; r < ROWS; r++) {
@@ -172,7 +207,8 @@ function buildLevel() {
       const x = c * TILE;
       const y = r * TILE;
       if (ch === "?" || ch === "B") {
-        blocks.push({ x, y, type: ch, hit: false, bumpT: 0, coinPopped: false });
+        const content = ch === "?" ? BLOCK_CONTENTS[`${c},${r}`] || "coin" : null;
+        blocks.push({ x, y, type: ch, hit: false, bumpT: 0, content });
       } else if (ch === "g") {
         goombas.push({
           x, y: y - 8, w: 28, h: 28, vx: -40, vy: 0, alive: true, squashT: 0,
@@ -188,8 +224,8 @@ function buildLevel() {
   player = {
     x: spawn.x,
     y: spawn.y,
-    w: 24,
-    h: 30,
+    w: PLAYER_W,
+    h: PLAYER_SMALL_H,
     vx: 0,
     vy: 0,
     onGround: false,
@@ -199,7 +235,46 @@ function buildLevel() {
     invuln: 0,
     animT: 0,
     won: false,
+    form: "small", // small | big | fire
+    starT: 0,
+    fireCooldown: 0,
   };
+}
+
+function shrinkPlayer() {
+  if (player.form === "small") {
+    loseLife();
+    return;
+  }
+  player.form = "small";
+  const diff = PLAYER_BIG_H - PLAYER_SMALL_H;
+  player.h = PLAYER_SMALL_H;
+  player.y += diff;
+  player.invuln = 1.5;
+  sfx.shrink();
+}
+
+function growPlayer(newForm, b) {
+  if (player.form === "small") {
+    player.form = "big";
+    const diff = PLAYER_BIG_H - PLAYER_SMALL_H;
+    player.h = PLAYER_BIG_H;
+    player.y -= diff;
+    sfx.powerup();
+    spawnTextPop(b.x, b.y - TILE, "MUSHROOM!", "#ffd400");
+  } else if (newForm === "fire" && player.form !== "fire") {
+    player.form = "fire";
+    sfx.powerup();
+    spawnTextPop(b.x, b.y - TILE, "FIRE POWER!", "#ff5a3c");
+  } else {
+    score += 1000;
+    sfx.coin();
+    spawnTextPop(b.x, b.y - TILE, "+1000", "#ffd400");
+  }
+}
+
+function spawnTextPop(x, y, text, color) {
+  textPops.push({ x, y, text, color, t: 0 });
 }
 
 function tileAt(col, row) {
@@ -330,20 +405,38 @@ function update(dt) {
     for (const b of blocks) {
       const hitsFromBelow = vyBeforeCollision < 0 && Math.abs(player.y - (b.y + TILE)) < 1;
       const overlapsX = player.x < b.x + TILE && player.x + player.w > b.x;
-      if (hitsFromBelow && overlapsX) {
-        player.vy = 40;
-        player.y = b.y + TILE;
-        if (b.type === "?" && !b.hit) {
-          b.hit = true;
-          b.bumpT = 0.2;
-          coins++;
-          score += 200;
-          sfx.coin();
-          spawnCoinPop(b.x, b.y);
+      if (!hitsFromBelow || !overlapsX) continue;
+      player.vy = 40;
+      player.y = b.y + TILE;
+
+      if (b.type === "B") {
+        if (player.form !== "small") {
+          blocks.splice(blocks.indexOf(b), 1);
+          score += 50;
+          sfx.break();
+          spawnBrickDebris(b.x, b.y);
         } else {
           b.bumpT = 0.2;
           sfx.bump();
         }
+        continue;
+      }
+
+      // '?' block
+      if (b.hit) {
+        b.bumpT = 0.2;
+        sfx.bump();
+        continue;
+      }
+      b.hit = true;
+      b.bumpT = 0.2;
+      if (b.content === "coin") {
+        coins++;
+        score += 200;
+        sfx.coin();
+        spawnCoinPop(b.x, b.y);
+      } else {
+        spawnPowerup(b);
       }
     }
   }
@@ -368,30 +461,124 @@ function update(dt) {
     g.y = gObj.y;
     g.vy = gObj.vy;
 
-    if (!player.dead && player.invuln <= 0 && rectsOverlap(player, g)) {
-      const stomp = player.vy > 0 && player.y + player.h - g.y < 18;
-      if (stomp) {
+    if (!player.dead && rectsOverlap(player, g)) {
+      if (player.starT > 0) {
         g.alive = false;
         g.squashT = 0.3;
-        player.vy = JUMP_VELOCITY * 0.6;
         score += 100;
         sfx.stomp();
-      } else {
-        loseLife();
+      } else if (player.invuln <= 0) {
+        const stomp = player.vy > 0 && player.y + player.h - g.y < 18;
+        if (stomp) {
+          g.alive = false;
+          g.squashT = 0.3;
+          player.vy = JUMP_VELOCITY * 0.6;
+          score += 100;
+          sfx.stomp();
+        } else {
+          shrinkPlayer();
+        }
       }
     }
   }
   goombas = goombas.filter((g) => g.alive || g.squashT > -0.01);
 
   if (player.invuln > 0) player.invuln -= dt;
+  if (player.starT > 0) player.starT -= dt;
 
-  // Particles (coin pop)
+  // ---------- Powerups ----------
+  for (const p of powerups) {
+    if (p.type === "fireflower") continue; // stationary, no physics needed
+    p.vy += GRAVITY * dt;
+    p.x += p.vx * dt;
+    const aheadCol = Math.floor((p.x + (p.vx > 0 ? p.w + 1 : -1)) / TILE);
+    const footRow = Math.floor((p.y + p.h + 1) / TILE);
+    if (!isSolidTile(tileAt(aheadCol, footRow))) p.vx *= -1;
+    const midCol = Math.floor((p.x + p.w / 2) / TILE);
+    if (isSolidTile(tileAt(midCol, Math.floor(p.y / TILE)))) p.vx *= -1;
+
+    p.y += p.vy * dt;
+    resolveTileCollisions(p, "y");
+
+    if (p.type === "star" && p.vy === 0) p.vy = -420; // keep bouncing once grounded
+  }
+
+  for (const p of powerups) {
+    if (!rectsOverlap(player, p)) continue;
+    if (p.type === "mushroom") growPlayer("big", p);
+    else if (p.type === "fireflower") growPlayer("fire", p);
+    else if (p.type === "star") {
+      player.starT = 10;
+      sfx.star();
+      spawnTextPop(p.x, p.y - TILE, "STAR POWER!", "#ffe14d");
+    } else if (p.type === "oneup") {
+      lives++;
+      sfx.oneup();
+      spawnTextPop(p.x, p.y - TILE, "1-UP!", "#3fe23f");
+    }
+    p.collected = true;
+  }
+  powerups = powerups.filter((p) => !p.collected && p.y < LEVEL_PIXEL_HEIGHT + 100);
+
+  // ---------- Fireballs ----------
+  if (player.fireCooldown > 0) player.fireCooldown -= dt;
+  if (wantShoot && player.form === "fire" && player.fireCooldown <= 0 && fireballs.length < 2) {
+    fireballs.push({
+      x: player.x + (player.facing > 0 ? player.w : -10),
+      y: player.y + player.h / 2 - 5,
+      vx: 380 * player.facing,
+      vy: -120,
+      w: 10,
+      h: 10,
+      t: 0,
+    });
+    player.fireCooldown = 0.35;
+    sfx.fire();
+  }
+  wantShoot = false;
+
+  for (const f of fireballs) {
+    f.vy += 1400 * dt;
+    f.x += f.vx * dt;
+    f.y += f.vy * dt;
+    f.t += dt;
+    const footRow = Math.floor((f.y + f.h) / TILE);
+    const col = Math.floor((f.x + f.w / 2) / TILE);
+    if (isSolidTile(tileAt(col, footRow)) && f.vy > 0) {
+      f.y = footRow * TILE - f.h;
+      f.vy = -420;
+    }
+    const sideCol = Math.floor((f.x + (f.vx > 0 ? f.w : 0)) / TILE);
+    const midRow = Math.floor((f.y + f.h / 2) / TILE);
+    if (isSolidTile(tileAt(sideCol, midRow))) f.dead = true;
+    for (const g of goombas) {
+      if (g.alive && rectsOverlap(f, g)) {
+        g.alive = false;
+        g.squashT = 0.3;
+        score += 100;
+        sfx.stomp();
+        f.dead = true;
+      }
+    }
+    if (f.t > 3 || f.x < camX - 100 || f.x > camX + VIEW_W + 100) f.dead = true;
+  }
+  fireballs = fireballs.filter((f) => !f.dead);
+
+  // ---------- Text pops ----------
+  for (const tp of textPops) {
+    tp.t += dt;
+    tp.y -= 20 * dt;
+  }
+  textPops = textPops.filter((tp) => tp.t < 1.2);
+
+  // Particles (coin pop / brick debris)
   for (const p of particles) {
     p.t += dt;
     p.y += p.vy * dt;
     p.vy += 700 * dt;
+    if (p.vx) p.x += p.vx * dt;
   }
-  particles = particles.filter((p) => p.t < 0.6);
+  particles = particles.filter((p) => p.t < (p.kind === "debris" ? 0.9 : 0.6));
 
   // Win condition: reach flag column
   const flagCol = LEVEL_ROWS[4].indexOf("F");
@@ -416,6 +603,37 @@ function update(dt) {
 
 function spawnCoinPop(x, y) {
   particles.push({ x: x + TILE / 2 - 6, y: y - 4, vy: -260, t: 0, kind: "coin" });
+}
+
+function spawnPowerup(b) {
+  let type = b.content;
+  // Classic rule: a fire flower block gives a mushroom instead if you're small.
+  if (type === "fireflower" && player.form === "small") type = "mushroom";
+  const w = 26;
+  const h = 26;
+  powerups.push({
+    type,
+    x: b.x + (TILE - w) / 2,
+    y: b.y - h,
+    w,
+    h,
+    vx: type === "fireflower" ? 0 : 70,
+    vy: 0,
+    onGround: false,
+  });
+}
+
+function spawnBrickDebris(x, y) {
+  for (let i = 0; i < 4; i++) {
+    particles.push({
+      x: x + TILE / 2 - 4,
+      y: y + TILE / 2 - 4,
+      vy: -300 - Math.random() * 100,
+      vx: (i < 2 ? -1 : 1) * (80 + Math.random() * 80),
+      t: 0,
+      kind: "debris",
+    });
+  }
 }
 
 function showWinOverlay() {
@@ -481,8 +699,11 @@ function draw() {
   drawBlocks();
   drawFlag();
   drawParticles();
+  for (const p of powerups) drawPowerup(p);
   for (const g of goombas) drawGoomba(g);
+  for (const f of fireballs) drawFireball(f);
   if (!(state === "title")) drawPlayer();
+  drawTextPops();
 
   ctx.restore();
 }
@@ -624,11 +845,90 @@ function drawFlag() {
 
 function drawParticles() {
   for (const p of particles) {
-    ctx.globalAlpha = Math.max(0, 1 - p.t / 0.6);
+    if (p.kind === "debris") {
+      ctx.globalAlpha = Math.max(0, 1 - p.t / 0.9);
+      ctx.fillStyle = "#b5471f";
+      ctx.fillRect(p.x, p.y, 8, 8);
+    } else {
+      ctx.globalAlpha = Math.max(0, 1 - p.t / 0.6);
+      ctx.fillStyle = "#ffd400";
+      ctx.beginPath();
+      ctx.arc(p.x + 6, p.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawPowerup(p) {
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  if (p.type === "mushroom" || p.type === "oneup") {
+    const capColor = p.type === "oneup" ? "#3fae2a" : "#e2382c";
+    ctx.fillStyle = capColor;
+    ctx.beginPath();
+    ctx.arc(p.w / 2, p.h / 2, p.w / 2, Math.PI, 0);
+    ctx.fill();
+    ctx.fillStyle = "#fff8e0";
+    ctx.fillRect(2, p.h / 2, p.w - 4, p.h / 2 - 2);
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(7, p.h / 2 - 4, 3, 0, Math.PI * 2);
+    ctx.arc(p.w - 7, p.h / 2 - 4, 3, 0, Math.PI * 2);
+    ctx.arc(p.w / 2, p.h / 2 - 9, 3, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (p.type === "fireflower") {
+    ctx.fillStyle = "#3fae2a";
+    ctx.fillRect(p.w / 2 - 2, p.h / 2, 4, p.h / 2);
+    ctx.fillStyle = "#ff5a3c";
+    for (const [dx, dy] of [[0, -2], [8, 6], [-8, 6], [8, -8], [-8, -8]]) {
+      ctx.beginPath();
+      ctx.arc(p.w / 2 + dx, p.h / 2 - 4 + dy, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.fillStyle = "#ffd400";
     ctx.beginPath();
-    ctx.arc(p.x + 6, p.y, 6, 0, Math.PI * 2);
+    ctx.arc(p.w / 2, p.h / 2 - 4, 5, 0, Math.PI * 2);
     ctx.fill();
+  } else if (p.type === "star") {
+    ctx.fillStyle = `hsl(${(performance.now() / 4) % 360}, 90%, 60%)`;
+    drawStarShape(p.w / 2, p.h / 2, p.w / 2, p.w / 4, 5);
+  }
+  ctx.restore();
+}
+
+function drawStarShape(cx, cy, outerR, innerR, points) {
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const r = i % 2 === 0 ? outerR : innerR;
+    const angle = (Math.PI / points) * i - Math.PI / 2;
+    const x = cx + r * Math.cos(angle);
+    const y = cy + r * Math.sin(angle);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawFireball(f) {
+  ctx.fillStyle = "#ff8a3c";
+  ctx.beginPath();
+  ctx.arc(f.x + f.w / 2, f.y + f.h / 2, f.w / 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#ffd400";
+  ctx.beginPath();
+  ctx.arc(f.x + f.w / 2, f.y + f.h / 2, f.w / 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawTextPops() {
+  ctx.font = "bold 13px monospace";
+  ctx.textAlign = "center";
+  for (const tp of textPops) {
+    ctx.globalAlpha = Math.max(0, 1 - tp.t / 1.2);
+    ctx.fillStyle = tp.color;
+    ctx.fillText(tp.text, tp.x + TILE / 2, tp.y);
     ctx.globalAlpha = 1;
   }
 }
@@ -662,38 +962,54 @@ function drawGoomba(g) {
 
 function drawPlayer() {
   const p = player;
+
+  // Brief post-hit invulnerability blinks the sprite; star power recolors it.
+  const shrinkFlicker = p.starT <= 0 && p.invuln > 0 && Math.floor(performance.now() / 80) % 2 === 0;
+  if (shrinkFlicker) return;
+
   ctx.save();
+  if (p.starT > 0) {
+    ctx.filter = `hue-rotate(${Math.floor(performance.now() / 4) % 360}deg) saturate(2)`;
+  }
   ctx.translate(p.x + p.w / 2, p.y + p.h / 2);
-  if (p.dead) ctx.rotate(Math.min(1, p.animT) * 0);
   ctx.scale(p.facing, 1);
   ctx.translate(-p.w / 2, -p.h / 2);
 
   const bob = p.onGround && Math.abs(p.vx) > 5 ? Math.sin(p.animT * 20) * 2 : 0;
+  const isFire = p.form === "fire";
+  const capShirtColor = isFire ? "#f2f2f2" : "#d3241f";
+  const overallsColor = isFire ? "#c0221c" : "#2b4fbf";
+
+  const legsY = p.h - 8;
+  const bodyY = p.h - 16;
+  const shirtY = p.h - 18;
+  const headY = p.h - 26;
+  const capY = p.h - 30;
 
   // legs
-  ctx.fillStyle = "#2b4fbf";
-  ctx.fillRect(2, 22 + bob, 8, 8);
-  ctx.fillRect(14, 22 - bob, 8, 8);
+  ctx.fillStyle = overallsColor;
+  ctx.fillRect(2, legsY + bob, 8, 8);
+  ctx.fillRect(14, legsY - bob, 8, 8);
   // overalls body
-  ctx.fillStyle = "#2b4fbf";
-  ctx.fillRect(4, 14, 16, 10);
+  ctx.fillStyle = overallsColor;
+  ctx.fillRect(4, bodyY, 16, 10);
   // shirt/arms
-  ctx.fillStyle = "#d3241f";
-  ctx.fillRect(0, 12, 24, 6);
-  ctx.fillRect(0, 12, 5, 12);
-  ctx.fillRect(19, 12, 5, 12);
+  ctx.fillStyle = capShirtColor;
+  ctx.fillRect(0, shirtY, 24, 6);
+  ctx.fillRect(0, shirtY, 5, 12);
+  ctx.fillRect(19, shirtY, 5, 12);
   // head
   ctx.fillStyle = "#f4c08a";
-  ctx.fillRect(4, 4, 16, 10);
+  ctx.fillRect(4, headY, 16, 10);
   // cap
-  ctx.fillStyle = "#d3241f";
-  ctx.fillRect(2, 0, 20, 6);
-  ctx.fillRect(14, 4, 8, 3);
+  ctx.fillStyle = capShirtColor;
+  ctx.fillRect(2, capY, 20, 6);
+  ctx.fillRect(14, capY + 4, 8, 3);
   // mustache/eye
   ctx.fillStyle = "#5a3a1a";
-  ctx.fillRect(12, 9, 6, 2);
+  ctx.fillRect(12, headY + 5, 6, 2);
   ctx.fillStyle = "#000";
-  ctx.fillRect(15, 6, 2, 2);
+  ctx.fillRect(15, headY + 2, 2, 2);
 
   ctx.restore();
 }
