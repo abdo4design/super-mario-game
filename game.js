@@ -54,13 +54,16 @@ function buildOverworld() {
   [6, 30, 33, 63, 84, 100, 120, 140].forEach((c) => b.set(7, c, "H"));
   [14, 66, 96, 118, 138].forEach((c) => b.set(7, c, "b"));
 
-  // pipes: plain obstacle pipes, one warp pipe into the underground room
+  // pipes: plain obstacle pipes, one warp pipe into the underground room.
+  // Max jump height only clears a 2-tile pipe (a 3-tile pipe's top sits
+  // above the player's peak jump height and can never be jumped over), so
+  // every obstacle pipe here is capped at height 2.
   b.placePipe(10, 6, 2);
-  b.placePipe(41, 5, 3);
+  b.placePipe(41, 6, 2);
   b.placePipe(58, 6, 2);
   warpPipes["58,6"] = { toWorld: "underground", spawn: { x: 2 * TILE, y: 5 * TILE } };
   b.placePipe(92, 6, 2);
-  b.placePipe(122, 5, 3);
+  b.placePipe(122, 6, 2);
 
   // Power-up cluster, placed early (right after the first pipe) so it's
   // easy to reach on a first attempt: mushroom, then star, then fire flower.
