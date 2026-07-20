@@ -302,6 +302,7 @@ function update(dt) {
   resolveTileCollisions(player, "x");
 
   // Vertical movement + collision
+  const vyBeforeCollision = player.vy;
   player.y += player.vy * dt;
   player.onGround = false;
   resolveTileCollisions(player, "y");
@@ -318,26 +319,30 @@ function update(dt) {
     }
   }
 
-  // Player vs blocks (hit from below)
+  // Player vs blocks (hit from below). resolveTileCollisions() already
+  // snaps player.y to exactly (b.y + TILE) and zeroes player.vy when the
+  // player's head hits a block's underside, so we must use the
+  // pre-collision velocity to detect an upward hit, not the now-zeroed one.
+  // The snapped position is flush against the block (touching, not
+  // overlapping), so rectsOverlap's strict inequalities would miss it —
+  // check the x-range instead.
   if (!player.dead) {
     for (const b of blocks) {
-      const blockRect = { x: b.x, y: b.y, w: TILE, h: TILE };
-      if (rectsOverlap(player, blockRect) && player.vy < 0) {
-        const hitsFromBelow = player.y - player.vy * dt >= b.y + TILE - 4;
-        if (hitsFromBelow) {
-          player.vy = 40;
-          player.y = b.y + TILE;
-          if (b.type === "?" && !b.hit) {
-            b.hit = true;
-            b.bumpT = 0.2;
-            coins++;
-            score += 200;
-            sfx.coin();
-            spawnCoinPop(b.x, b.y);
-          } else {
-            b.bumpT = 0.2;
-            sfx.bump();
-          }
+      const hitsFromBelow = vyBeforeCollision < 0 && Math.abs(player.y - (b.y + TILE)) < 1;
+      const overlapsX = player.x < b.x + TILE && player.x + player.w > b.x;
+      if (hitsFromBelow && overlapsX) {
+        player.vy = 40;
+        player.y = b.y + TILE;
+        if (b.type === "?" && !b.hit) {
+          b.hit = true;
+          b.bumpT = 0.2;
+          coins++;
+          score += 200;
+          sfx.coin();
+          spawnCoinPop(b.x, b.y);
+        } else {
+          b.bumpT = 0.2;
+          sfx.bump();
         }
       }
     }
