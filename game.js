@@ -336,7 +336,7 @@ const sfx = {
     setTimeout(() => beep(880, 0.07, "square"), 70);
     setTimeout(() => beep(1046, 0.1, "square"), 140);
   },
-  fire: () => beep(740, 0.08, "sawtooth", 0.06),
+  fire: () => beep(180, 0.05, "square", 0.09),
   shrink: () => beep(200, 0.3, "sawtooth"),
   break: () => beep(160, 0.1, "square"),
   oneup: () => {
@@ -361,7 +361,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.code === "KeyP") togglePause();
   if (e.code === "KeyM") toggleSound();
-  if (e.code === "ControlLeft" || e.code === "ControlRight" || e.code === "KeyX") wantShoot = true;
+  if (e.code === "KeyQ" || e.code === "ControlLeft" || e.code === "ControlRight" || e.code === "KeyX") wantShoot = true;
   if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) {
     e.preventDefault();
   }
@@ -1459,14 +1459,34 @@ function drawStarShape(cx, cy, outerR, innerR, points) {
 }
 
 function drawFireball(f) {
-  ctx.fillStyle = "#ff8a3c";
+  const cx = f.x + f.w / 2;
+  const cy = f.y + f.h / 2;
+  const dir = f.vx >= 0 ? 1 : -1;
+
+  // motion trail
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = "#ffd94d";
   ctx.beginPath();
-  ctx.arc(f.x + f.w / 2, f.y + f.h / 2, f.w / 2, 0, Math.PI * 2);
+  ctx.ellipse(cx - dir * 8, cy, 5, 2.5, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#ffd400";
+  ctx.globalAlpha = 1;
+
+  // bullet body
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(dir, 1);
+  ctx.fillStyle = "#e0a734";
   ctx.beginPath();
-  ctx.arc(f.x + f.w / 2, f.y + f.h / 2, f.w / 4, 0, Math.PI * 2);
+  ctx.moveTo(-f.w / 2, -3);
+  ctx.lineTo(f.w / 2 - 3, -3);
+  ctx.lineTo(f.w / 2 + 3, 0);
+  ctx.lineTo(f.w / 2 - 3, 3);
+  ctx.lineTo(-f.w / 2, 3);
+  ctx.closePath();
   ctx.fill();
+  ctx.fillStyle = "#fff4c2";
+  ctx.fillRect(-f.w / 2, -3, 3, 2);
+  ctx.restore();
 }
 
 function drawTextPops() {
@@ -1612,6 +1632,15 @@ function drawPlayer() {
   ctx.fillRect(12, headY + 5, 6, 2);
   ctx.fillStyle = "#000";
   ctx.fillRect(15, headY + 2, 2, 2);
+
+  // Fire Mario carries a little gun instead of throwing bare fireballs
+  if (isFire) {
+    ctx.fillStyle = "#5a5a5a";
+    ctx.fillRect(19, shirtY + 3, 10, 4);
+    ctx.fillStyle = "#3a3a3a";
+    ctx.fillRect(27, shirtY + 3, 4, 4);
+    ctx.fillRect(20, shirtY + 7, 4, 3);
+  }
 
   ctx.restore();
 }
