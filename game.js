@@ -5,7 +5,7 @@ const TILE = 32;
 
 // Level legend:
 // '.' empty  'G' ground  '?' question block  'B' brick  'p' pipe (2 tiles wide)
-// 'g' goomba spawn  'M' player spawn  'F' flagpole  'H' hill (decor)
+// 'g' goomba spawn  'k' koopa spawn  'M' player spawn  'F' flagpole  'H' hill (decor)
 // 'b' bush (decor)  'c' cloud (decor)
 
 // A "world" bundles a tile grid with everything needed to place entities on
@@ -95,6 +95,7 @@ function buildLevel1_1() {
   b.set(4, 20, "?");
 
   [24, 45, 70, 90].forEach((c) => b.set(7, c, "g"));
+  [37, 95].forEach((c) => b.set(7, c, "k"));
 
   b.set(5, 2, "M");
 
@@ -130,6 +131,7 @@ function buildLevel1_2() {
   b.set(4, 22, "?");
 
   [24, 34, 50, 66, 85].forEach((c) => b.set(7, c, "g"));
+  [40, 75].forEach((c) => b.set(7, c, "k"));
 
   b.set(5, 2, "M");
 
@@ -165,6 +167,7 @@ function buildLevel2_1() {
   b.set(4, 40, "?");
 
   [15, 26, 42, 58, 74, 92].forEach((c) => b.set(7, c, "g"));
+  [46, 97].forEach((c) => b.set(7, c, "k"));
 
   b.set(5, 2, "M");
 
@@ -203,6 +206,7 @@ function buildLevel2_2() {
   blockContents["75,4"] = "oneup";
 
   [16, 33, 47, 62, 78, 94, 106].forEach((c) => b.set(7, c, "g"));
+  [56, 70, 100].forEach((c) => b.set(7, c, "k"));
 
   b.set(5, 2, "M");
 
@@ -406,17 +410,20 @@ let camX = 0;
 const PLAYER_W = 24;
 const PLAYER_SMALL_H = 30;
 const PLAYER_BIG_H = 42;
+const KOOPA_WALK_H = 36;
+const KOOPA_SHELL_H = 24;
 
-let player, goombas, blocks, particles, powerups, fireballs, textPops;
+let player, goombas, koopas, blocks, particles, powerups, fireballs, textPops;
 let warpCooldown = 0;
 
 // Scans a world's tile grid and builds fresh dynamic entity arrays for it
-// (blocks, goombas, spawn point). Called once per world the first time it's
-// entered; the resulting arrays are cached on the world object so that
-// progress (broken blocks, defeated enemies) survives repeated warps.
+// (blocks, goombas, koopas, spawn point). Called once per world the first
+// time it's entered; the resulting arrays are cached on the world object so
+// that progress (broken blocks, defeated enemies) survives repeated warps.
 function populateEntities(w) {
   const blocksArr = [];
   const goombasArr = [];
+  const koopasArr = [];
   let spawn = { x: 2 * TILE, y: 5 * TILE };
 
   for (let r = 0; r < w.ROWS; r++) {
@@ -432,13 +439,18 @@ function populateEntities(w) {
         goombasArr.push({
           x, y: y - 8, w: 28, h: 28, vx: -40, vy: 0, alive: true, squashT: 0,
         });
+      } else if (ch === "k") {
+        koopasArr.push({
+          x, y: y - 16, w: 26, h: 36, vx: -35, vy: 0, alive: true, squashT: 0,
+          state: "walking", shellTimer: 0,
+        });
       } else if (ch === "M") {
         spawn = { x, y };
       }
     }
   }
 
-  return { blocks: blocksArr, goombas: goombasArr, spawn };
+  return { blocks: blocksArr, goombas: goombasArr, koopas: koopasArr, spawn };
 }
 
 function newPlayerAt(spawn) {
@@ -472,9 +484,10 @@ function loadCurrentLevel() {
   lvl.entities = null;
   applyWorld(lvl);
   const ent = populateEntities(world);
-  world.entities = { blocks: ent.blocks, goombas: ent.goombas };
+  world.entities = { blocks: ent.blocks, goombas: ent.goombas, koopas: ent.koopas };
   blocks = ent.blocks;
   goombas = ent.goombas;
+  koopas = ent.koopas;
   particles = [];
   powerups = [];
   fireballs = [];
@@ -505,16 +518,17 @@ function advanceToNextLevel() {
 
 function warpTo(targetWorldName, spawn) {
   // Save the current world's live entity arrays so state persists.
-  world.entities = { blocks, goombas };
+  world.entities = { blocks, goombas, koopas };
 
   const target = WORLD_REGISTRY[targetWorldName];
   if (!target.entities) {
     const ent = populateEntities(target);
-    target.entities = { blocks: ent.blocks, goombas: ent.goombas };
+    target.entities = { blocks: ent.blocks, goombas: ent.goombas, koopas: ent.koopas };
   }
   applyWorld(target);
   blocks = target.entities.blocks;
   goombas = target.entities.goombas;
+  koopas = target.entities.koopas;
   if (LEVEL_ORDER.includes(target.name)) worldEl.textContent = target.name;
 
   powerups = [];
@@ -578,6 +592,26 @@ function tileAt(col, row) {
 
 function isSolidTile(ch) {
   return ch === "G" || ch === "B" || ch === "?" || ch === "P" || ch === "p";
+}
+
+// Shared ground-patrol step for goombas and walking koopas: looks at the
+// leading edge of where the step WOULD land before committing to it, and
+// turns around in place (without moving into a wall, or off a ledge when
+// avoidLedges is true) rather than moving first and reacting after.
+function patrolStep(e, dt, avoidLedges) {
+  const nextX = e.x + e.vx * dt;
+  const leadCol = Math.floor((e.vx > 0 ? nextX + e.w : nextX) / TILE);
+  const bodyRow = Math.floor(e.y / TILE);
+  let blocked = isSolidTile(tileAt(leadCol, bodyRow));
+  if (!blocked && avoidLedges) {
+    const footRow = Math.floor((e.y + e.h + 1) / TILE);
+    blocked = !isSolidTile(tileAt(leadCol, footRow));
+  }
+  if (blocked) {
+    e.vx *= -1;
+  } else {
+    e.x = nextX;
+  }
 }
 
 function startGame() {
@@ -754,12 +788,7 @@ function update(dt) {
       continue;
     }
     g.vy += GRAVITY * dt;
-    g.x += g.vx * dt;
-    const aheadCol = Math.floor((g.x + (g.vx > 0 ? g.w + 1 : -1)) / TILE);
-    const footRow = Math.floor((g.y + g.h + 1) / TILE);
-    if (!isSolidTile(tileAt(aheadCol, footRow))) g.vx *= -1;
-    const midCol = Math.floor((g.x + g.w / 2) / TILE);
-    if (isSolidTile(tileAt(midCol, Math.floor((g.y) / TILE)))) g.vx *= -1;
+    patrolStep(g, dt, true);
 
     g.y += g.vy * dt;
     const gObj = { x: g.x, y: g.y, w: g.w, h: g.h, vy: g.vy };
@@ -788,6 +817,108 @@ function update(dt) {
     }
   }
   goombas = goombas.filter((g) => g.alive || g.squashT > -0.01);
+
+  // Koopas: walking -> (stomped) -> stationary shell -> (kicked) -> sliding
+  // shell that defeats anything else it touches, until it's stomped again
+  // (stops it) or it falls into a pit. A stationary shell wakes back up
+  // after a while, matching classic behavior.
+  for (const k of koopas) {
+    if (!k.alive) {
+      k.squashT -= dt;
+      continue;
+    }
+    k.vy += GRAVITY * dt;
+    if (k.state === "walking") patrolStep(k, dt, true);
+    else if (k.state === "sliding") patrolStep(k, dt, false);
+
+    k.y += k.vy * dt;
+    const kObj = { x: k.x, y: k.y, w: k.w, h: k.h, vy: k.vy };
+    resolveTileCollisions(kObj, "y");
+    k.y = kObj.y;
+    k.vy = kObj.vy;
+
+    if (k.y > LEVEL_PIXEL_HEIGHT + 100) {
+      k.alive = false;
+      k.squashT = -1;
+      continue;
+    }
+
+    if (k.state === "shell") {
+      k.shellTimer -= dt;
+      if (k.shellTimer <= 0) {
+        k.state = "walking";
+        k.h = KOOPA_WALK_H;
+        k.y -= KOOPA_WALK_H - KOOPA_SHELL_H;
+        k.vx = -35;
+      }
+    }
+
+    if (k.state === "sliding") {
+      for (const g of goombas) {
+        if (g.alive && rectsOverlap(k, g)) {
+          g.alive = false;
+          g.squashT = 0.3;
+          score += 100;
+          sfx.stomp();
+        }
+      }
+      for (const other of koopas) {
+        if (other !== k && other.alive && other.state !== "sliding" && rectsOverlap(k, other)) {
+          other.alive = false;
+          other.squashT = 0.3;
+          score += 100;
+          sfx.stomp();
+        }
+      }
+    }
+
+    if (!player.dead && rectsOverlap(player, k)) {
+      if (player.starT > 0) {
+        k.alive = false;
+        k.squashT = 0.3;
+        score += 100;
+        sfx.stomp();
+      } else if (player.invuln <= 0) {
+        const stompHit = player.vy > 0 && player.y + player.h - k.y < 18;
+        if (k.state === "walking") {
+          if (stompHit) {
+            k.state = "shell";
+            k.vx = 0;
+            k.h = KOOPA_SHELL_H;
+            k.y += KOOPA_WALK_H - KOOPA_SHELL_H;
+            k.shellTimer = 8;
+            player.vy = JUMP_VELOCITY * 0.6;
+            score += 100;
+            sfx.stomp();
+          } else {
+            shrinkPlayer();
+          }
+        } else if (k.state === "shell") {
+          if (stompHit) {
+            player.vy = JUMP_VELOCITY * 0.6;
+            score += 50;
+            sfx.bump();
+          } else {
+            k.state = "sliding";
+            k.vx = (player.x < k.x ? 1 : -1) * 260;
+            sfx.stomp();
+          }
+        } else if (k.state === "sliding") {
+          if (stompHit) {
+            k.state = "shell";
+            k.vx = 0;
+            k.shellTimer = 8;
+            player.vy = JUMP_VELOCITY * 0.6;
+            score += 100;
+            sfx.stomp();
+          } else {
+            shrinkPlayer();
+          }
+        }
+      }
+    }
+  }
+  koopas = koopas.filter((k) => k.alive || k.squashT > -0.01);
 
   if (player.invuln > 0) player.invuln -= dt;
   if (player.starT > 0) player.starT -= dt;
@@ -868,6 +999,15 @@ function update(dt) {
       if (g.alive && rectsOverlap(f, g)) {
         g.alive = false;
         g.squashT = 0.3;
+        score += 100;
+        sfx.stomp();
+        f.dead = true;
+      }
+    }
+    for (const k of koopas) {
+      if (k.alive && rectsOverlap(f, k)) {
+        k.alive = false;
+        k.squashT = 0.3;
         score += 100;
         sfx.stomp();
         f.dead = true;
@@ -1018,11 +1158,14 @@ function draw() {
   drawParticles();
   for (const p of powerups) drawPowerup(p);
   for (const g of goombas) drawGoomba(g);
+  for (const k of koopas) drawKoopa(k);
   for (const f of fireballs) drawFireball(f);
   if (!(state === "title")) drawPlayer();
   drawTextPops();
 
   ctx.restore();
+
+  drawFireworks(); // screen-space, drawn after ctx.restore() so it isn't affected by camera scroll
 }
 
 function drawBackground() {
@@ -1364,6 +1507,61 @@ function drawGoomba(g) {
   ctx.restore();
 }
 
+function drawKoopa(k) {
+  ctx.save();
+  ctx.translate(k.x, k.y);
+  if (!k.alive) {
+    ctx.scale(1, 0.35);
+    ctx.translate(0, k.h * 1.4);
+  }
+
+  if (k.state === "walking") {
+    // legs
+    ctx.fillStyle = "#e8c23a";
+    ctx.fillRect(2, k.h - 8, 7, 8);
+    ctx.fillRect(k.w - 9, k.h - 8, 7, 8);
+    // shell body
+    ctx.fillStyle = "#3fae2a";
+    ctx.beginPath();
+    ctx.ellipse(k.w / 2, k.h / 2, k.w / 2, k.h / 2 - 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#276b1a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(k.w / 2, 4);
+    ctx.lineTo(k.w / 2, k.h - 10);
+    ctx.moveTo(4, k.h / 2);
+    ctx.lineTo(k.w - 4, k.h / 2);
+    ctx.stroke();
+    // head
+    ctx.fillStyle = "#e8c23a";
+    ctx.beginPath();
+    ctx.ellipse(k.w / 2, 6, 8, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.arc(k.w / 2 + 3, 4, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // shell (stationary or sliding)
+    ctx.fillStyle = "#3fae2a";
+    ctx.beginPath();
+    ctx.ellipse(k.w / 2, k.h / 2, k.w / 2, k.h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#276b1a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(k.w / 2, k.h / 2, k.w / 3, k.h / 3, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "#fff8e0";
+    ctx.beginPath();
+    ctx.ellipse(k.w / 2, k.h / 2, k.w / 5, k.h / 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 function drawPlayer() {
   const p = player;
 
@@ -1418,12 +1616,62 @@ function drawPlayer() {
   ctx.restore();
 }
 
+// ---------- Fireworks (final "course clear" celebration) ----------
+let fireworkParticles = [];
+let fireworkTimer = 0;
+
+function spawnFirework() {
+  const cx = 120 + Math.random() * (VIEW_W - 240);
+  const cy = 90 + Math.random() * 160;
+  const color = `hsl(${Math.floor(Math.random() * 360)}, 90%, 62%)`;
+  const count = 20;
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i) / count;
+    const speed = 90 + Math.random() * 70;
+    fireworkParticles.push({
+      x: cx, y: cy, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, t: 0, color,
+    });
+  }
+  sfx.star();
+}
+
+function updateFireworks(dt) {
+  if (state === "gameover-win") {
+    fireworkTimer -= dt;
+    if (fireworkTimer <= 0) {
+      spawnFirework();
+      fireworkTimer = 0.7 + Math.random() * 0.6;
+    }
+  } else if (fireworkParticles.length === 0 && fireworkTimer === 0) {
+    return; // nothing to do outside the win screen once particles have cleared
+  }
+  for (const p of fireworkParticles) {
+    p.t += dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += 220 * dt;
+  }
+  fireworkParticles = fireworkParticles.filter((p) => p.t < 1.3);
+}
+
+function drawFireworks() {
+  for (const p of fireworkParticles) {
+    ctx.globalAlpha = Math.max(0, 1 - p.t / 1.3);
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
 // ---------- Main loop ----------
 function loop(t) {
   if (!lastTime) lastTime = t;
   const dt = Math.min(0.033, (t - lastTime) / 1000);
   lastTime = t;
   update(dt);
+  updateFireworks(dt);
   draw();
   requestAnimationFrame(loop);
 }
