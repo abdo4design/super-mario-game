@@ -4,64 +4,155 @@
 const TILE = 32;
 
 // Level legend:
-// '.' empty  'G' ground  '?' question block  'B' brick  'P' pipe top  'p' pipe body
-// 'C' floating coin  'g' goomba spawn  'M' player spawn  'F' flagpole  'H' hill (decor)
+// '.' empty  'G' ground  '?' question block  'B' brick  'p' pipe (2 tiles wide)
+// 'g' goomba spawn  'M' player spawn  'F' flagpole  'H' hill (decor)
 // 'b' bush (decor)  'c' cloud (decor)
-const ROWS = 10;
-const COLS = 92;
 
-// Maps "col,row" -> what a '?' block contains when hit. Blocks not listed
-// here (and any '?' whose special content was already claimed) pop a coin.
-const BLOCK_CONTENTS = {};
-
-function buildLevelRows() {
-  const grid = Array.from({ length: ROWS }, () => Array(COLS).fill("."));
+// A "world" bundles a tile grid with everything needed to place entities on
+// it and to warp into/out of it (pipes). The overworld and the underground
+// bonus room are each one of these; only one is active ("current") at a
+// time, and warping just swaps which one update()/draw() read from.
+function makeGridBuilder(rows, cols) {
+  const grid = Array.from({ length: rows }, () => Array(cols).fill("."));
   const set = (r, c, ch) => {
-    if (r >= 0 && r < ROWS && c >= 0 && c < COLS) grid[r][c] = ch;
+    if (r >= 0 && r < rows && c >= 0 && c < cols) grid[r][c] = ch;
   };
   const setRange = (r, c1, c2, ch) => {
     for (let c = c1; c <= c2; c++) set(r, c, ch);
   };
-
-  // ground (bottom two rows)
-  setRange(ROWS - 2, 0, COLS - 1, "G");
-  setRange(ROWS - 1, 0, COLS - 1, "G");
-
-  // decor: clouds
-  [8, 40, 62, 80].forEach((c) => set(1, c, "c"));
-
-  // decor: hills
-  [6, 30, 33, 63, 84].forEach((c) => set(7, c, "H"));
-
-  // decor: bushes
-  [14, 40, 66].forEach((c) => set(7, c, "b"));
-
-  // question blocks and bricks
-  set(4, 20, "?");
-  BLOCK_CONTENTS["20,4"] = "mushroom";
-
-  setRange(4, 49, 53, "B");
-  set(4, 49, "?");
-  set(4, 51, "?");
-  BLOCK_CONTENTS["51,4"] = "star";
-  set(4, 53, "?");
-  BLOCK_CONTENTS["53,4"] = "fireflower";
-
-  // goombas
-  [21, 51, 72].forEach((c) => set(7, c, "g"));
-
-  // player spawn
-  set(5, 2, "M");
-
-  // flagpole near the end
-  set(4, 88, "F");
-
-  return grid.map((row) => row.join(""));
+  const pipeLeftCols = new Set();
+  const placePipe = (colLeft, topRow, height) => {
+    for (let r = topRow; r < topRow + height; r++) {
+      set(r, colLeft, "p");
+      set(r, colLeft + 1, "p");
+    }
+    pipeLeftCols.add(colLeft);
+  };
+  return { grid, set, setRange, placePipe, pipeLeftCols, rows, cols };
 }
 
-const LEVEL_ROWS = buildLevelRows();
-const LEVEL_PIXEL_WIDTH = COLS * TILE;
-const LEVEL_PIXEL_HEIGHT = ROWS * TILE;
+function buildOverworld() {
+  const ROWS = 10;
+  const COLS = 92;
+  const b = makeGridBuilder(ROWS, COLS);
+  const blockContents = {};
+  const warpPipes = {};
+
+  b.setRange(ROWS - 2, 0, COLS - 1, "G");
+  b.setRange(ROWS - 1, 0, COLS - 1, "G");
+
+  // pits (gaps requiring a jump)
+  [[36, 38], [76, 78]].forEach(([c1, c2]) => {
+    for (let c = c1; c <= c2; c++) {
+      b.set(ROWS - 2, c, ".");
+      b.set(ROWS - 1, c, ".");
+    }
+  });
+
+  // decor
+  [8, 40, 62, 80].forEach((c) => b.set(1, c, "c"));
+  [6, 30, 33, 63, 84].forEach((c) => b.set(7, c, "H"));
+  [14, 66].forEach((c) => b.set(7, c, "b"));
+
+  // pipes: two plain obstacle pipes, one warp pipe into the underground room
+  b.placePipe(10, 6, 2);
+  b.placePipe(41, 5, 3);
+  b.placePipe(58, 6, 2);
+  warpPipes["58,6"] = { toWorld: "underground", spawn: { x: 2 * TILE, y: 5 * TILE } };
+
+  // question blocks and bricks
+  b.set(4, 20, "?");
+  blockContents["20,4"] = "mushroom";
+
+  b.setRange(4, 49, 53, "B");
+  b.set(4, 49, "?");
+  b.set(4, 51, "?");
+  blockContents["51,4"] = "star";
+  b.set(4, 53, "?");
+  blockContents["53,4"] = "fireflower";
+
+  // goombas
+  [21, 51, 72].forEach((c) => b.set(7, c, "g"));
+
+  // player spawn
+  b.set(5, 2, "M");
+
+  // flagpole near the end
+  b.set(4, 88, "F");
+
+  return {
+    name: "overworld",
+    theme: "overworld",
+    rows: b.grid.map((row) => row.join("")),
+    ROWS,
+    COLS,
+    blockContents,
+    pipeLeftCols: b.pipeLeftCols,
+    warpPipes,
+    flagRow: 4,
+    flagCol: 88,
+    entities: null,
+  };
+}
+
+function buildUnderground() {
+  const ROWS = 8;
+  const COLS = 16;
+  const b = makeGridBuilder(ROWS, COLS);
+  const blockContents = {};
+  const warpPipes = {};
+
+  b.setRange(0, 0, COLS - 1, "B"); // brick ceiling
+  b.setRange(ROWS - 2, 0, COLS - 1, "G");
+  b.setRange(ROWS - 1, 0, COLS - 1, "G");
+
+  [3, 5, 7, 9, 11].forEach((c) => {
+    b.set(3, c, "?");
+    blockContents[`${c},3`] = "coin";
+  });
+  blockContents["9,3"] = "oneup";
+
+  b.placePipe(13, ROWS - 4, 2);
+  warpPipes[`13,${ROWS - 4}`] = {
+    toWorld: "overworld",
+    spawn: { x: 61 * TILE, y: 5 * TILE },
+  };
+
+  return {
+    name: "underground",
+    theme: "underground",
+    rows: b.grid.map((row) => row.join("")),
+    ROWS,
+    COLS,
+    blockContents,
+    pipeLeftCols: b.pipeLeftCols,
+    warpPipes,
+    flagRow: -1,
+    flagCol: -1,
+    entities: null,
+  };
+}
+
+const WORLD_REGISTRY = {}; // populated by initWorlds(): name -> world object
+let world; // active world
+let ROWS, COLS, LEVEL_ROWS, LEVEL_PIXEL_WIDTH, LEVEL_PIXEL_HEIGHT;
+
+function initWorlds() {
+  WORLD_REGISTRY.overworld = buildOverworld();
+  WORLD_REGISTRY.underground = buildUnderground();
+}
+
+function applyWorld(w) {
+  world = w;
+  ROWS = w.ROWS;
+  COLS = w.COLS;
+  LEVEL_ROWS = w.rows;
+  LEVEL_PIXEL_WIDTH = COLS * TILE;
+  LEVEL_PIXEL_HEIGHT = ROWS * TILE;
+}
+
+initWorlds();
+applyWorld(WORLD_REGISTRY.overworld);
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -125,6 +216,10 @@ const sfx = {
     beep(784, 0.08, "square");
     setTimeout(() => beep(988, 0.08, "square"), 80);
     setTimeout(() => beep(1318, 0.16, "square"), 160);
+  },
+  warp: () => {
+    beep(440, 0.08, "sine");
+    setTimeout(() => beep(220, 0.15, "sine"), 80);
   },
 };
 
@@ -190,38 +285,41 @@ const PLAYER_SMALL_H = 30;
 const PLAYER_BIG_H = 42;
 
 let player, goombas, blocks, particles, powerups, fireballs, textPops;
+let warpCooldown = 0;
 
-function buildLevel() {
-  goombas = [];
-  blocks = []; // dynamic block state: {x,y,type,hit,bumpT,content}
-  particles = [];
-  powerups = [];
-  fireballs = [];
-  textPops = [];
+// Scans a world's tile grid and builds fresh dynamic entity arrays for it
+// (blocks, goombas, spawn point). Called once per world the first time it's
+// entered; the resulting arrays are cached on the world object so that
+// progress (broken blocks, defeated enemies) survives repeated warps.
+function populateEntities(w) {
+  const blocksArr = [];
+  const goombasArr = [];
   let spawn = { x: 2 * TILE, y: 5 * TILE };
 
-  for (let r = 0; r < ROWS; r++) {
-    const row = LEVEL_ROWS[r];
-    for (let c = 0; c < COLS; c++) {
+  for (let r = 0; r < w.ROWS; r++) {
+    const row = w.rows[r];
+    for (let c = 0; c < w.COLS; c++) {
       const ch = row[c];
       const x = c * TILE;
       const y = r * TILE;
       if (ch === "?" || ch === "B") {
-        const content = ch === "?" ? BLOCK_CONTENTS[`${c},${r}`] || "coin" : null;
-        blocks.push({ x, y, type: ch, hit: false, bumpT: 0, content });
+        const content = ch === "?" ? w.blockContents[`${c},${r}`] || "coin" : null;
+        blocksArr.push({ x, y, type: ch, hit: false, bumpT: 0, content });
       } else if (ch === "g") {
-        goombas.push({
+        goombasArr.push({
           x, y: y - 8, w: 28, h: 28, vx: -40, vy: 0, alive: true, squashT: 0,
         });
       } else if (ch === "M") {
         spawn = { x, y };
-      } else if (ch === "F") {
-        // flagpole handled via static scan, not needed dynamically
       }
     }
   }
 
-  player = {
+  return { blocks: blocksArr, goombas: goombasArr, spawn };
+}
+
+function newPlayerAt(spawn) {
+  return {
     x: spawn.x,
     y: spawn.y,
     w: PLAYER_W,
@@ -239,6 +337,50 @@ function buildLevel() {
     starT: 0,
     fireCooldown: 0,
   };
+}
+
+function buildLevel() {
+  // Fresh run / respawn: reset the overworld's entities and start clean.
+  WORLD_REGISTRY.overworld.entities = null;
+  applyWorld(WORLD_REGISTRY.overworld);
+  const ent = populateEntities(world);
+  world.entities = { blocks: ent.blocks, goombas: ent.goombas };
+  blocks = ent.blocks;
+  goombas = ent.goombas;
+  particles = [];
+  powerups = [];
+  fireballs = [];
+  textPops = [];
+  warpCooldown = 0;
+  player = newPlayerAt(ent.spawn);
+}
+
+function warpTo(targetWorldName, spawn) {
+  // Save the current world's live entity arrays so state persists.
+  world.entities = { blocks, goombas };
+
+  const target = WORLD_REGISTRY[targetWorldName];
+  if (!target.entities) {
+    const ent = populateEntities(target);
+    target.entities = { blocks: ent.blocks, goombas: ent.goombas };
+  }
+  applyWorld(target);
+  blocks = target.entities.blocks;
+  goombas = target.entities.goombas;
+
+  powerups = [];
+  fireballs = [];
+  particles = [];
+  textPops = [];
+
+  player.x = spawn.x;
+  player.y = spawn.y;
+  player.vx = 0;
+  player.vy = 0;
+  player.onGround = false;
+  camX = 0;
+  warpCooldown = 0.6;
+  sfx.warp();
 }
 
 function shrinkPlayer() {
@@ -384,6 +526,17 @@ function update(dt) {
 
   if (player.y > LEVEL_PIXEL_HEIGHT + 100 && !player.dead) {
     loseLife();
+  }
+
+  // Warp pipes: standing on a marked pipe top and pressing Down enters it.
+  if (warpCooldown > 0) warpCooldown -= dt;
+  if (!player.dead && player.onGround && warpCooldown <= 0 && (keys["ArrowDown"] || keys["KeyS"])) {
+    const feetRow = Math.round((player.y + player.h) / TILE);
+    const colA = Math.floor(player.x / TILE);
+    const colB = colA - 1;
+    const pipeCol = world.pipeLeftCols.has(colA) ? colA : world.pipeLeftCols.has(colB) ? colB : null;
+    const pipe = pipeCol !== null ? world.warpPipes[`${pipeCol},${feetRow}`] : null;
+    if (pipe) warpTo(pipe.toWorld, pipe.spawn);
   }
 
   // Blocks bump animation
@@ -581,7 +734,7 @@ function update(dt) {
   particles = particles.filter((p) => p.t < (p.kind === "debris" ? 0.9 : 0.6));
 
   // Win condition: reach flag column
-  const flagCol = LEVEL_ROWS[4].indexOf("F");
+  const flagCol = world.flagCol;
   if (flagCol > -1 && player.x > flagCol * TILE && !player.won && !player.dead) {
     player.won = true;
     player.vx = 0;
@@ -688,7 +841,7 @@ function resolveTileCollisions(entity, axis) {
 // ---------- Rendering ----------
 function draw() {
   ctx.imageSmoothingEnabled = false;
-  ctx.fillStyle = "#6b8cff";
+  ctx.fillStyle = world.theme === "underground" ? "#0c0c1a" : "#6b8cff";
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
   ctx.save();
@@ -769,6 +922,10 @@ function drawTiles() {
       const x = c * TILE;
       const y = r * TILE;
       if (ch === "G") drawGroundTile(x, y);
+      else if (ch === "p" && world.pipeLeftCols.has(c)) {
+        const isTop = r === 0 || LEVEL_ROWS[r - 1][c] !== "p";
+        drawPipeSegment(x, y, isTop);
+      }
     }
   }
 }
@@ -782,6 +939,27 @@ function drawGroundTile(x, y) {
   ctx.fillStyle = "#a53e14";
   ctx.fillRect(x + 4, y + 6, 10, 6);
   ctx.fillRect(x + 18, y + 20, 10, 6);
+}
+
+function drawPipeSegment(x, y, isTop) {
+  const w = TILE * 2;
+  ctx.fillStyle = "#2f9e3f";
+  ctx.strokeStyle = "#1c6b28";
+  ctx.lineWidth = 2;
+  if (isTop) {
+    const capH = 12;
+    ctx.fillRect(x - 4, y, w + 8, capH);
+    ctx.strokeRect(x - 3, y + 1, w + 6, capH - 2);
+    ctx.fillRect(x, y + capH, w, TILE - capH);
+    ctx.strokeRect(x + 1, y + capH, w - 2, TILE - capH - 1);
+    ctx.fillStyle = "#4fc766";
+    ctx.fillRect(x - 2, y + 2, 6, capH - 4);
+  } else {
+    ctx.fillRect(x, y, w, TILE);
+    ctx.strokeRect(x + 1, y + 1, w - 2, TILE - 2);
+    ctx.fillStyle = "#4fc766";
+    ctx.fillRect(x + 2, y, 6, TILE);
+  }
 }
 
 function drawBlocks() {
@@ -822,8 +1000,8 @@ function drawBlocks() {
 }
 
 function drawFlag() {
-  const flagRow = 4;
-  const flagCol = LEVEL_ROWS[flagRow].indexOf("F");
+  const flagRow = world.flagRow;
+  const flagCol = world.flagCol;
   if (flagCol === -1) return;
   const x = flagCol * TILE + TILE / 2;
   const topY = flagRow * TILE;
