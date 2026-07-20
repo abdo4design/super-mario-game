@@ -60,19 +60,25 @@ function buildOverworld() {
   b.placePipe(58, 6, 2);
   warpPipes["58,6"] = { toWorld: "underground", spawn: { x: 2 * TILE, y: 5 * TILE } };
 
-  // question blocks and bricks
-  b.set(4, 20, "?");
-  blockContents["20,4"] = "mushroom";
+  // Power-up cluster, placed early (right after the first pipe) so it's
+  // easy to reach on a first attempt: mushroom, then star, then fire flower.
+  b.set(4, 16, "?");
+  blockContents["16,4"] = "mushroom";
+  b.set(4, 18, "B");
+  b.set(4, 19, "?");
+  blockContents["19,4"] = "star";
+  b.set(4, 20, "B");
+  b.set(4, 21, "?");
+  blockContents["21,4"] = "fireflower";
 
+  // a plain bonus coin cluster further along
   b.setRange(4, 49, 53, "B");
   b.set(4, 49, "?");
   b.set(4, 51, "?");
-  blockContents["51,4"] = "star";
   b.set(4, 53, "?");
-  blockContents["53,4"] = "fireflower";
 
   // goombas
-  [21, 51, 72].forEach((c) => b.set(7, c, "g"));
+  [26, 51, 72].forEach((c) => b.set(7, c, "g"));
 
   // player spawn
   b.set(5, 2, "M");
@@ -398,12 +404,15 @@ function shrinkPlayer() {
 
 function growPlayer(newForm, b) {
   if (player.form === "small") {
-    player.form = "big";
+    // A fire flower picked up from Small goes straight to Fire (skipping
+    // Big) so the pickup always has a visible, guaranteed payoff.
+    player.form = newForm;
     const diff = PLAYER_BIG_H - PLAYER_SMALL_H;
     player.h = PLAYER_BIG_H;
     player.y -= diff;
     sfx.powerup();
-    spawnTextPop(b.x, b.y - TILE, "MUSHROOM!", "#ffd400");
+    const isFire = newForm === "fire";
+    spawnTextPop(b.x, b.y - TILE, isFire ? "FIRE POWER!" : "MUSHROOM!", isFire ? "#ff5a3c" : "#ffd400");
   } else if (newForm === "fire" && player.form !== "fire") {
     player.form = "fire";
     sfx.powerup();
@@ -653,7 +662,7 @@ function update(dt) {
     p.y += p.vy * dt;
     resolveTileCollisions(p, "y");
 
-    if (p.type === "star" && p.vy === 0) p.vy = -420; // keep bouncing once grounded
+    if (p.type === "star" && p.vy === 0) p.vy = -340; // keep bouncing once grounded, but catchable
   }
 
   for (const p of powerups) {
@@ -759,9 +768,7 @@ function spawnCoinPop(x, y) {
 }
 
 function spawnPowerup(b) {
-  let type = b.content;
-  // Classic rule: a fire flower block gives a mushroom instead if you're small.
-  if (type === "fireflower" && player.form === "small") type = "mushroom";
+  const type = b.content;
   const w = 26;
   const h = 26;
   powerups.push({
