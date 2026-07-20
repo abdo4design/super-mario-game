@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Super Plumber Bros</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="game-wrap">
+    <div id="hud">
+      <div class="hud-item">
+        <div class="hud-label">SCORE</div>
+        <div class="hud-value" id="score">000000</div>
+      </div>
+      <div class="hud-item">
+        <div class="hud-label">COINS</div>
+        <div class="hud-value" id="coins">00</div>
+      </div>
+      <div class="hud-item">
+        <div class="hud-label">WORLD</div>
+        <div class="hud-value" id="world">1-1</div>
+      </div>
+      <div class="hud-item">
+        <div class="hud-label">TIME</div>
+        <div class="hud-value" id="time">400</div>
+      </div>
+      <div class="hud-item">
+        <div class="hud-label">LIVES</div>
+        <div class="hud-value" id="lives">3</div>
+      </div>
+    </div>
+
+    <div id="canvas-container">
+      <canvas id="game" width="1024" height="576"></canvas>
+
+      <div id="title-screen">
+        <div class="title-box">
+          <div class="title-line">SUPER</div>
+          <div class="title-line">PLUMBER</div>
+          <div class="title-line">BROS.</div>
+        </div>
+        <div class="title-sub">an original fan-made tribute</div>
+        <div class="title-hint">Press ENTER or tap to start</div>
+      </div>
+
+      <div id="pause-screen" class="hidden">
+        <div class="pause-text">PAUSED</div>
+      </div>
+
+      <div id="game-over-screen" class="hidden">
+        <div class="go-text">GAME OVER</div>
+        <div class="go-hint">Press ENTER to restart</div>
+      </div>
+    </div>
+
+    <div id="footer-bar">
+      <div class="footer-item" id="map-select">🗺️ MAP SELECT</div>
+      <button class="footer-item" id="fullscreen-btn">⛶ FULL SCREEN</button>
+      <button class="footer-item" id="sound-btn">🔊 SOUND: ON</button>
+    </div>
+
+    <div id="controls-hint">
+      Arrow keys / A D to move &nbsp;•&nbsp; Space / W / Up to jump &nbsp;•&nbsp;
+      Shift to run &nbsp;•&nbsp; P to pause &nbsp;•&nbsp; M to mute
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
