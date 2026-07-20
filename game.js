@@ -33,7 +33,7 @@ function makeGridBuilder(rows, cols) {
 
 function buildOverworld() {
   const ROWS = 10;
-  const COLS = 92;
+  const COLS = 150;
   const b = makeGridBuilder(ROWS, COLS);
   const blockContents = {};
   const warpPipes = {};
@@ -42,7 +42,7 @@ function buildOverworld() {
   b.setRange(ROWS - 1, 0, COLS - 1, "G");
 
   // pits (gaps requiring a jump)
-  [[36, 38], [76, 78]].forEach(([c1, c2]) => {
+  [[36, 38], [76, 78], [104, 106], [134, 136]].forEach(([c1, c2]) => {
     for (let c = c1; c <= c2; c++) {
       b.set(ROWS - 2, c, ".");
       b.set(ROWS - 1, c, ".");
@@ -50,15 +50,17 @@ function buildOverworld() {
   });
 
   // decor
-  [8, 40, 62, 80].forEach((c) => b.set(1, c, "c"));
-  [6, 30, 33, 63, 84].forEach((c) => b.set(7, c, "H"));
-  [14, 66].forEach((c) => b.set(7, c, "b"));
+  [8, 40, 62, 80, 92, 110, 130, 145].forEach((c) => b.set(1, c, "c"));
+  [6, 30, 33, 63, 84, 100, 120, 140].forEach((c) => b.set(7, c, "H"));
+  [14, 66, 96, 118, 138].forEach((c) => b.set(7, c, "b"));
 
-  // pipes: two plain obstacle pipes, one warp pipe into the underground room
+  // pipes: plain obstacle pipes, one warp pipe into the underground room
   b.placePipe(10, 6, 2);
   b.placePipe(41, 5, 3);
   b.placePipe(58, 6, 2);
   warpPipes["58,6"] = { toWorld: "underground", spawn: { x: 2 * TILE, y: 5 * TILE } };
+  b.placePipe(92, 6, 2);
+  b.placePipe(122, 5, 3);
 
   // Power-up cluster, placed early (right after the first pipe) so it's
   // easy to reach on a first attempt: mushroom, then star, then fire flower.
@@ -77,14 +79,21 @@ function buildOverworld() {
   b.set(4, 51, "?");
   b.set(4, 53, "?");
 
+  // a second bonus cluster in the late-game stretch, with a 1-up
+  b.setRange(4, 112, 116, "B");
+  b.set(4, 112, "?");
+  b.set(4, 114, "?");
+  blockContents["114,4"] = "oneup";
+  b.set(4, 116, "?");
+
   // goombas
-  [26, 51, 72].forEach((c) => b.set(7, c, "g"));
+  [26, 51, 72, 98, 128].forEach((c) => b.set(7, c, "g"));
 
   // player spawn
   b.set(5, 2, "M");
 
   // flagpole near the end
-  b.set(4, 88, "F");
+  b.set(4, 146, "F");
 
   return {
     name: "overworld",
@@ -96,7 +105,7 @@ function buildOverworld() {
     pipeLeftCols: b.pipeLeftCols,
     warpPipes,
     flagRow: 4,
-    flagCol: 88,
+    flagCol: 146,
     entities: null,
   };
 }
@@ -649,15 +658,22 @@ function update(dt) {
   if (player.starT > 0) player.starT -= dt;
 
   // ---------- Powerups ----------
+  // All power-ups fall to the ground under gravity so they're easy to see
+  // and grab. Unlike goombas, they deliberately do NOT turn around at
+  // ledges — they're meant to walk off their single-tile spawn block and
+  // drop to true floor level, only bouncing back off actual solid walls.
   for (const p of powerups) {
-    if (p.type === "fireflower") continue; // stationary, no physics needed
     p.vy += GRAVITY * dt;
-    p.x += p.vx * dt;
-    const aheadCol = Math.floor((p.x + (p.vx > 0 ? p.w + 1 : -1)) / TILE);
-    const footRow = Math.floor((p.y + p.h + 1) / TILE);
-    if (!isSolidTile(tileAt(aheadCol, footRow))) p.vx *= -1;
-    const midCol = Math.floor((p.x + p.w / 2) / TILE);
-    if (isSolidTile(tileAt(midCol, Math.floor(p.y / TILE)))) p.vx *= -1;
+    if (p.vx !== 0) {
+      const nextX = p.x + p.vx * dt;
+      const leadCol = Math.floor((p.vx > 0 ? nextX + p.w : nextX) / TILE);
+      const midRow = Math.floor(p.y / TILE);
+      if (isSolidTile(tileAt(leadCol, midRow))) {
+        p.vx *= -1;
+      } else {
+        p.x = nextX;
+      }
+    }
 
     p.y += p.vy * dt;
     resolveTileCollisions(p, "y");
@@ -777,7 +793,7 @@ function spawnPowerup(b) {
     y: b.y - h,
     w,
     h,
-    vx: type === "fireflower" ? 0 : 70,
+    vx: 70, // all power-ups walk off their spawn block so they reach true ground level
     vy: 0,
     onGround: false,
   });
