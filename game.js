@@ -458,7 +458,7 @@ function newPlayerAt(spawn) {
     x: spawn.x,
     y: spawn.y,
     w: PLAYER_W,
-    h: PLAYER_SMALL_H,
+    h: PLAYER_BIG_H,
     vx: 0,
     vy: 0,
     onGround: false,
@@ -468,7 +468,7 @@ function newPlayerAt(spawn) {
     invuln: 0,
     animT: 0,
     won: false,
-    form: "small", // small | big | fire
+    form: "fire", // small | big | fire - Mario starts already powered up
     starT: 0,
     fireCooldown: 0,
   };
