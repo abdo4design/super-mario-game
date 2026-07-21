@@ -51,6 +51,19 @@ function pits(b, ROWS, ranges) {
   });
 }
 
+// Densely scatters goombas/koopas across [startCol, endCol), skipping any
+// column that isn't clear open ground (pits, pipes, blocks already placed
+// there). Run this AFTER all other terrain so it only fills genuine gaps.
+function scatterEnemies(b, ROWS, startCol, endCol, rand, target, koopaChance = 0.35) {
+  let placed = 0;
+  for (let c = startCol; c < endCol && placed < target; c += 3) {
+    if (b.grid[7][c] !== "." || b.grid[ROWS - 2][c] !== "G") continue;
+    b.set(7, c, rand() < koopaChance ? "k" : "g");
+    placed++;
+  }
+  return placed;
+}
+
 function finishOverworldLevel(id, b, ROWS, COLS, blockContents, warpPipes, flagCol) {
   return {
     name: id,
@@ -76,6 +89,7 @@ function buildLevel1_1() {
   const b = makeGridBuilder(ROWS, COLS);
   const blockContents = {};
   const warpPipes = {};
+  const rand = mulberry32(11);
 
   b.setRange(ROWS - 2, 0, COLS - 1, "G");
   b.setRange(ROWS - 1, 0, COLS - 1, "G");
@@ -98,8 +112,7 @@ function buildLevel1_1() {
   b.set(4, 18, "?");
   b.set(4, 20, "?");
 
-  [24, 45, 70, 90].forEach((c) => b.set(7, c, "g"));
-  [37, 95].forEach((c) => b.set(7, c, "k"));
+  scatterEnemies(b, ROWS, 22, 98, rand, 10);
 
   b.set(5, 2, "M");
 
@@ -139,7 +152,7 @@ function buildGeneratedLevel(worldNum, levelNum) {
   const startZone = 14;
   const endZone = 20; // reserved for staircase + gap + flag + castle
   const segW = 8;
-  const numSegments = 8 + Math.min(16, Math.floor(idx / 2));
+  const numSegments = 14 + Math.min(16, Math.floor(idx / 2));
   const COLS = startZone + numSegments * segW + endZone;
 
   const b = makeGridBuilder(ROWS, COLS);
@@ -149,12 +162,9 @@ function buildGeneratedLevel(worldNum, levelNum) {
   b.setRange(ROWS - 2, 0, COLS - 1, "G");
   b.setRange(ROWS - 1, 0, COLS - 1, "G");
 
-  const featurePool =
-    idx <= 8
-      ? ["goomba", "pit", "goomba", "pipe", "coinblock", "goomba"]
-      : idx <= 20
-      ? ["goomba", "pit", "pipe", "goomba", "koopa", "coinblock", "pit"]
-      : ["goomba", "koopa", "pit", "pipe", "pit", "goomba", "koopa", "coinblock"];
+  // Enemies are placed separately by scatterEnemies() below (densely, across
+  // the whole level) - these segments only handle terrain/coin features.
+  const featurePool = ["pit", "pipe", "coinblock", "pit", "pipe"];
 
   const powerupType = POWERUP_CYCLE[(idx - 1) % POWERUP_CYCLE.length];
   const giveOneUp = levelNum === LEVELS_PER_WORLD; // last level of each world
@@ -177,22 +187,30 @@ function buildGeneratedLevel(worldNum, levelNum) {
 
     const choice = featurePool[Math.floor(rand() * featurePool.length)];
     if (choice === "pit") {
-      b.set(ROWS - 2, center, ".");
-      b.set(ROWS - 2, center + 1, ".");
-      b.set(ROWS - 1, center, ".");
-      b.set(ROWS - 1, center + 1, ".");
+      // Pits widen in the back half of the campaign for an extra timing
+      // challenge on top of the denser, faster enemies.
+      const pitWidth = idx > 16 ? 3 : 2;
+      for (let dc = 0; dc < pitWidth; dc++) {
+        b.set(ROWS - 2, center + dc, ".");
+        b.set(ROWS - 1, center + dc, ".");
+      }
     } else if (choice === "pipe") {
       b.placePipe(center, ROWS - 4, 2);
-    } else if (choice === "goomba") {
-      b.set(7, center, "g");
-    } else if (choice === "koopa") {
-      b.set(7, center, "k");
     } else if (choice === "coinblock") {
       b.set(4, center, "?");
     }
   }
 
-  // Scattered decor; skip any cell a feature already claimed.
+  b.set(5, 2, "M");
+
+  const stairsStart = COLS - endZone + 2;
+  // Enemies get first pick of the open ground; decor (purely cosmetic)
+  // fills in whatever's left over so it never steals an enemy's spot.
+  // Koopas (tougher - need a kick, not just a stomp, and can chain-kill)
+  // become a bigger share of the mix as the campaign progresses.
+  const koopaChance = Math.min(0.6, 0.2 + idx * 0.012);
+  scatterEnemies(b, ROWS, 22, stairsStart - 4, rand, 10, koopaChance);
+
   for (let c = 4; c < COLS - 4; c += 6) {
     const r = rand();
     if (r < 0.25) b.set(1, c, "c");
@@ -200,9 +218,6 @@ function buildGeneratedLevel(worldNum, levelNum) {
     else if (r < 0.55 && b.grid[7][c] === ".") b.set(7, c, "b");
   }
 
-  b.set(5, 2, "M");
-
-  const stairsStart = COLS - endZone + 2;
   // Barrier pit right before the stairs: patrolling enemies turn around at
   // its edge and can never wander onto the staircase.
   b.set(ROWS - 2, stairsStart - 3, ".");
@@ -444,11 +459,11 @@ function populateEntities(w) {
         blocksArr.push({ x, y, type: ch, hit: false, bumpT: 0, content });
       } else if (ch === "g") {
         goombasArr.push({
-          x, y: y - 8, w: 28, h: 28, vx: -40, vy: 0, alive: true, squashT: 0,
+          x, y: y - 8, w: 28, h: 28, vx: -60, vy: 0, alive: true, squashT: 0,
         });
       } else if (ch === "k") {
         koopasArr.push({
-          x, y: y - 16, w: 26, h: 36, vx: -35, vy: 0, alive: true, squashT: 0,
+          x, y: y - 16, w: 26, h: 36, vx: -52, vy: 0, alive: true, squashT: 0,
           state: "walking", shellTimer: 0,
         });
       } else if (ch === "M") {
@@ -655,10 +670,10 @@ function loseLife() {
 
 // ---------- Physics constants ----------
 const GRAVITY = 1600;
-const MOVE_ACCEL = 900;
-const MAX_RUN = 260;
-const MAX_WALK = 160;
-const FRICTION = 1200;
+const MOVE_ACCEL = 1800; // 2x - doubled alongside top speed so accel feel stays the same
+const MAX_RUN = 520;
+const MAX_WALK = 320;
+const FRICTION = 2400;
 const JUMP_VELOCITY = -520;
 
 function rectsOverlap(a, b) {
@@ -856,7 +871,7 @@ function update(dt) {
         k.state = "walking";
         k.h = KOOPA_WALK_H;
         k.y -= KOOPA_WALK_H - KOOPA_SHELL_H;
-        k.vx = -35;
+        k.vx = -52;
       }
     }
 
@@ -907,7 +922,7 @@ function update(dt) {
             sfx.bump();
           } else {
             k.state = "sliding";
-            k.vx = (player.x < k.x ? 1 : -1) * 260;
+            k.vx = (player.x < k.x ? 1 : -1) * 340;
             sfx.stomp();
           }
         } else if (k.state === "sliding") {
@@ -972,8 +987,10 @@ function update(dt) {
   powerups = powerups.filter((p) => !p.collected && p.y < LEVEL_PIXEL_HEIGHT + 100);
 
   // ---------- Fireballs ----------
+  // No cap on how many are on screen and (almost) no cooldown - shoot as
+  // much as you want.
   if (player.fireCooldown > 0) player.fireCooldown -= dt;
-  if (wantShoot && player.form === "fire" && player.fireCooldown <= 0 && fireballs.length < 2) {
+  if (wantShoot && player.form === "fire" && player.fireCooldown <= 0) {
     fireballs.push({
       x: player.x + (player.facing > 0 ? player.w : -10),
       y: player.y + player.h / 2 - 5,
@@ -983,7 +1000,7 @@ function update(dt) {
       h: 10,
       t: 0,
     });
-    player.fireCooldown = 0.35;
+    player.fireCooldown = 0.08;
     sfx.fire();
   }
   wantShoot = false;
