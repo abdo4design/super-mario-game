@@ -409,7 +409,7 @@ let camX = 0;
 
 const PLAYER_W = 24;
 const PLAYER_SMALL_H = 30;
-const PLAYER_BIG_H = 42;
+const PLAYER_BIG_H = 62; // a full extra tile taller than small, not just a little
 const KOOPA_WALK_H = 36;
 const KOOPA_SHELL_H = 24;
 
@@ -1596,17 +1596,23 @@ function drawPlayer() {
   ctx.translate(p.x + p.w / 2, p.y + p.h / 2);
   ctx.scale(p.facing, 1);
   ctx.translate(-p.w / 2, -p.h / 2);
+  // Draw at the small-form proportions, then stretch vertically to fill the
+  // actual hitbox height. Using fixed offsets from p.h (the old approach)
+  // pinned the same 30px-tall sprite near the feet no matter how tall p.h
+  // was, so "growing" never actually changed Mario's drawn size — only the
+  // invisible collision box got taller.
+  ctx.scale(1, p.h / PLAYER_SMALL_H);
 
   const bob = p.onGround && Math.abs(p.vx) > 5 ? Math.sin(p.animT * 20) * 2 : 0;
   const isFire = p.form === "fire";
   const capShirtColor = isFire ? "#f2f2f2" : "#d3241f";
   const overallsColor = isFire ? "#c0221c" : "#2b4fbf";
 
-  const legsY = p.h - 8;
-  const bodyY = p.h - 16;
-  const shirtY = p.h - 18;
-  const headY = p.h - 26;
-  const capY = p.h - 30;
+  const legsY = PLAYER_SMALL_H - 8;
+  const bodyY = PLAYER_SMALL_H - 16;
+  const shirtY = PLAYER_SMALL_H - 18;
+  const headY = PLAYER_SMALL_H - 26;
+  const capY = PLAYER_SMALL_H - 30;
 
   // legs
   ctx.fillStyle = overallsColor;
