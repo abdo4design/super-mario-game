@@ -1588,6 +1588,22 @@ function drawPlayer() {
   }
   ctx.translate(p.x + p.w / 2, p.y + p.h / 2);
   ctx.scale(p.facing, 1);
+
+  // Running gait: a brisk stride cycle (legs scissor fore/aft as well as
+  // bobbing) that speeds up with ground speed, plus a slight forward lean
+  // while sprinting so it reads as running rather than just walking. The
+  // lean rotates around the character's center, so it must happen before
+  // shifting the origin to the top-left corner for the rest of the drawing.
+  const speed = Math.abs(p.vx);
+  const running = p.onGround && speed > 5;
+  const strideRate = 8 + speed / 22;
+  const phase = p.animT * strideRate;
+  const stride = running ? Math.sin(phase) : 0;
+  const hop = running ? Math.max(0, Math.cos(phase)) * -2.5 : 0;
+  if (running && speed > 140) {
+    ctx.rotate(0.09);
+  }
+
   ctx.translate(-p.w / 2, -p.h / 2);
   // Draw at the small-form proportions, then stretch vertically to fill the
   // actual hitbox height. Using fixed offsets from p.h (the old approach)
@@ -1596,7 +1612,7 @@ function drawPlayer() {
   // invisible collision box got taller.
   ctx.scale(1, p.h / PLAYER_SMALL_H);
 
-  const bob = p.onGround && Math.abs(p.vx) > 5 ? Math.sin(p.animT * 20) * 2 : 0;
+  const bob = hop;
   const isFire = p.form === "fire";
   const capShirtColor = isFire ? "#f2f2f2" : "#d3241f";
   const overallsColor = isFire ? "#c0221c" : "#2b4fbf";
@@ -1607,38 +1623,38 @@ function drawPlayer() {
   const headY = PLAYER_SMALL_H - 26;
   const capY = PLAYER_SMALL_H - 30;
 
-  // legs
+  // legs: scissor fore/aft in addition to bobbing, like a running stride
   ctx.fillStyle = overallsColor;
-  ctx.fillRect(2, legsY + bob, 8, 8);
-  ctx.fillRect(14, legsY - bob, 8, 8);
+  ctx.fillRect(2 + stride * 3, legsY + bob, 8, 8);
+  ctx.fillRect(14 - stride * 3, legsY + bob, 8, 8);
   // overalls body
   ctx.fillStyle = overallsColor;
-  ctx.fillRect(4, bodyY, 16, 10);
-  // shirt/arms
+  ctx.fillRect(4, bodyY + bob * 0.4, 16, 10);
+  // shirt/arms (swing opposite the legs)
   ctx.fillStyle = capShirtColor;
-  ctx.fillRect(0, shirtY, 24, 6);
-  ctx.fillRect(0, shirtY, 5, 12);
-  ctx.fillRect(19, shirtY, 5, 12);
+  ctx.fillRect(0, shirtY + bob * 0.4, 24, 6);
+  ctx.fillRect(0, shirtY + bob * 0.4 - stride * 2, 5, 12);
+  ctx.fillRect(19, shirtY + bob * 0.4 + stride * 2, 5, 12);
   // head
   ctx.fillStyle = "#f4c08a";
-  ctx.fillRect(4, headY, 16, 10);
+  ctx.fillRect(4, headY + bob * 0.4, 16, 10);
   // cap
   ctx.fillStyle = capShirtColor;
-  ctx.fillRect(2, capY, 20, 6);
-  ctx.fillRect(14, capY + 4, 8, 3);
+  ctx.fillRect(2, capY + bob * 0.4, 20, 6);
+  ctx.fillRect(14, capY + 4 + bob * 0.4, 8, 3);
   // mustache/eye
   ctx.fillStyle = "#5a3a1a";
-  ctx.fillRect(12, headY + 5, 6, 2);
+  ctx.fillRect(12, headY + 5 + bob * 0.4, 6, 2);
   ctx.fillStyle = "#000";
-  ctx.fillRect(15, headY + 2, 2, 2);
+  ctx.fillRect(15, headY + 2 + bob * 0.4, 2, 2);
 
   // Fire Mario carries a little gun instead of throwing bare fireballs
   if (isFire) {
     ctx.fillStyle = "#5a5a5a";
-    ctx.fillRect(19, shirtY + 3, 10, 4);
+    ctx.fillRect(19, shirtY + 3 + bob * 0.4, 10, 4);
     ctx.fillStyle = "#3a3a3a";
-    ctx.fillRect(27, shirtY + 3, 4, 4);
-    ctx.fillRect(20, shirtY + 7, 4, 3);
+    ctx.fillRect(27, shirtY + 3 + bob * 0.4, 4, 4);
+    ctx.fillRect(20, shirtY + 7 + bob * 0.4, 4, 3);
   }
 
   ctx.restore();
