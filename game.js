@@ -1611,13 +1611,13 @@ function drawPlayer() {
     ctx.rotate(0.09);
   }
 
-  ctx.translate(-p.w / 2, -p.h / 2);
-  // Draw at the small-form proportions, then stretch vertically to fill the
-  // actual hitbox height. Using fixed offsets from p.h (the old approach)
-  // pinned the same 30px-tall sprite near the feet no matter how tall p.h
-  // was, so "growing" never actually changed Mario's drawn size — only the
-  // invisible collision box got taller.
-  ctx.scale(1, p.h / PLAYER_SMALL_H);
+  // Draw at the small-form proportions, then scale up UNIFORMLY (both axes,
+  // from the center) to match the actual hitbox height. Scaling only the
+  // vertical axis made Big/Fire Mario look thin and stretched instead of
+  // proportionally bigger.
+  const growScale = p.h / PLAYER_SMALL_H;
+  ctx.scale(growScale, growScale);
+  ctx.translate(-PLAYER_W / 2, -PLAYER_SMALL_H / 2);
 
   const bob = hop;
   const isFire = p.form === "fire";
