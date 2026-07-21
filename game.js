@@ -971,7 +971,7 @@ function update(dt) {
       x: player.x + (player.facing > 0 ? player.w : -10),
       y: player.y + player.h / 2 - 5,
       vx: 380 * player.facing,
-      vy: -120,
+      vy: 0,
       w: 10,
       h: 10,
       t: 0,
@@ -982,16 +982,9 @@ function update(dt) {
   wantShoot = false;
 
   for (const f of fireballs) {
-    f.vy += 1400 * dt;
+    // Straight shot: no gravity, no bounce - just travels in a flat line.
     f.x += f.vx * dt;
-    f.y += f.vy * dt;
     f.t += dt;
-    const footRow = Math.floor((f.y + f.h) / TILE);
-    const col = Math.floor((f.x + f.w / 2) / TILE);
-    if (isSolidTile(tileAt(col, footRow)) && f.vy > 0) {
-      f.y = footRow * TILE - f.h;
-      f.vy = -420;
-    }
     const sideCol = Math.floor((f.x + (f.vx > 0 ? f.w : 0)) / TILE);
     const midRow = Math.floor((f.y + f.h / 2) / TILE);
     if (isSolidTile(tileAt(sideCol, midRow))) f.dead = true;
