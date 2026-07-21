@@ -472,11 +472,11 @@ function populateEntities(w) {
         blocksArr.push({ x, y, type: ch, hit: false, bumpT: 0, content });
       } else if (ch === "g") {
         goombasArr.push({
-          x, y: y - 8, w: 28, h: 28, vx: -60, vy: 0, alive: true, squashT: 0,
+          x, y: y - 8, w: 28, h: 28, vx: -40, vy: 0, alive: true, squashT: 0,
         });
       } else if (ch === "k") {
         koopasArr.push({
-          x, y: y - 16, w: 26, h: 36, vx: -52, vy: 0, alive: true, squashT: 0,
+          x, y: y - 16, w: 26, h: 36, vx: -35, vy: 0, alive: true, squashT: 0,
           state: "walking", shellTimer: 0,
         });
       } else if (ch === "M") {
@@ -683,10 +683,10 @@ function loseLife() {
 
 // ---------- Physics constants ----------
 const GRAVITY = 1600;
-const MOVE_ACCEL = 1800; // 2x - doubled alongside top speed so accel feel stays the same
-const MAX_RUN = 520;
-const MAX_WALK = 320;
-const FRICTION = 2400;
+const MOVE_ACCEL = 900;
+const MAX_RUN = 260;
+const MAX_WALK = 160;
+const FRICTION = 1200;
 const JUMP_VELOCITY = -520;
 
 function rectsOverlap(a, b) {
@@ -894,7 +894,7 @@ function update(dt) {
         k.state = "walking";
         k.h = KOOPA_WALK_H;
         k.y -= KOOPA_WALK_H - KOOPA_SHELL_H;
-        k.vx = -52;
+        k.vx = -35;
       }
     }
 
@@ -945,7 +945,7 @@ function update(dt) {
             sfx.bump();
           } else {
             k.state = "sliding";
-            k.vx = (player.x < k.x ? 1 : -1) * 340;
+            k.vx = (player.x < k.x ? 1 : -1) * 260;
             sfx.stomp();
           }
         } else if (k.state === "sliding") {
