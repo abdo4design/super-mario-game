@@ -79,7 +79,11 @@ function buildLevel1_1() {
 
   b.setRange(ROWS - 2, 0, COLS - 1, "G");
   b.setRange(ROWS - 1, 0, COLS - 1, "G");
-  pits(b, ROWS, [[30, 31], [80, 81]]);
+  // A pit right before the staircase acts as a barrier: patrolling enemies
+  // turn around at its edge (same cliff-avoidance that stops them falling
+  // in), so nothing can ever wander up onto the stairs while the player is
+  // climbing them.
+  pits(b, ROWS, [[30, 31], [80, 81], [98, 99]]);
 
   [8, 40, 70, 95].forEach((c) => b.set(1, c, "c"));
   [6, 25, 55, 85].forEach((c) => b.set(7, c, "H"));
@@ -106,115 +110,111 @@ function buildLevel1_1() {
   return finishOverworldLevel("1-1", b, ROWS, COLS, blockContents, warpPipes, flagCol);
 }
 
-// World 1-2: a star power-up, and a tougher run of goombas.
-function buildLevel1_2() {
-  const ROWS = 10;
-  const COLS = 110;
-  const b = makeGridBuilder(ROWS, COLS);
-  const blockContents = {};
-  const warpPipes = {};
-
-  b.setRange(ROWS - 2, 0, COLS - 1, "G");
-  b.setRange(ROWS - 1, 0, COLS - 1, "G");
-  pits(b, ROWS, [[26, 27], [60, 61]]);
-
-  [10, 50, 80].forEach((c) => b.set(1, c, "c"));
-  [8, 40, 75].forEach((c) => b.set(7, c, "H"));
-  [20, 55].forEach((c) => b.set(7, c, "b"));
-
-  b.placePipe(12, 6, 2);
-  b.placePipe(70, 6, 2);
-
-  b.set(4, 18, "?");
-  blockContents["18,4"] = "star";
-  b.set(4, 20, "?");
-  b.set(4, 22, "?");
-
-  [24, 34, 50, 66, 85].forEach((c) => b.set(7, c, "g"));
-  [40, 75].forEach((c) => b.set(7, c, "k"));
-
-  b.set(5, 2, "M");
-
-  const afterStairs = b.addStaircase(91, 4, ROWS - 2);
-  const flagCol = afterStairs + 2;
-  b.set(4, flagCol, "F");
-
-  return finishOverworldLevel("1-2", b, ROWS, COLS, blockContents, warpPipes, flagCol);
+// Deterministic seeded RNG (mulberry32) so a given level's layout is
+// stable across replays instead of reshuffling every time it's loaded.
+function mulberry32(seed) {
+  let s = seed >>> 0;
+  return function () {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
-// World 2-1: a fire flower, more pits close together, and more enemies.
-function buildLevel2_1() {
+const WORLDS_COUNT = 4;
+const LEVELS_PER_WORLD = 8;
+const POWERUP_CYCLE = ["mushroom", "star", "fireflower"];
+
+// Procedurally builds every level except 1-1 (which is hand-authored above
+// and owns the only warp pipe down to the underground bonus room). The
+// level is divided into fixed-width segments after a safe starting zone;
+// each segment gets exactly one feature, so hazards can never overlap by
+// construction. Difficulty (level length, hazard density, enemy mix) scales
+// with how far into the 32-level run this level is.
+function buildGeneratedLevel(worldNum, levelNum) {
+  const idx = (worldNum - 1) * LEVELS_PER_WORLD + levelNum; // 1..32
+  const rand = mulberry32(worldNum * 1000 + levelNum * 37);
   const ROWS = 10;
-  const COLS = 120;
+  const startZone = 14;
+  const endZone = 20; // reserved for staircase + gap + flag + castle
+  const segW = 8;
+  const numSegments = 8 + Math.min(16, Math.floor(idx / 2));
+  const COLS = startZone + numSegments * segW + endZone;
+
   const b = makeGridBuilder(ROWS, COLS);
   const blockContents = {};
   const warpPipes = {};
 
   b.setRange(ROWS - 2, 0, COLS - 1, "G");
   b.setRange(ROWS - 1, 0, COLS - 1, "G");
-  pits(b, ROWS, [[20, 21], [50, 51], [85, 86]]);
 
-  [15, 45, 75, 100].forEach((c) => b.set(1, c, "c"));
-  [10, 40, 70, 95].forEach((c) => b.set(7, c, "H"));
-  [25, 60, 90].forEach((c) => b.set(7, c, "b"));
+  const featurePool =
+    idx <= 8
+      ? ["goomba", "pit", "goomba", "pipe", "coinblock", "goomba"]
+      : idx <= 20
+      ? ["goomba", "pit", "pipe", "goomba", "koopa", "coinblock", "pit"]
+      : ["goomba", "koopa", "pit", "pipe", "pit", "goomba", "koopa", "coinblock"];
 
-  b.placePipe(30, 6, 2);
-  b.placePipe(65, 6, 2);
+  const powerupType = POWERUP_CYCLE[(idx - 1) % POWERUP_CYCLE.length];
+  const giveOneUp = levelNum === LEVELS_PER_WORLD; // last level of each world
 
-  b.set(4, 36, "?");
-  blockContents["36,4"] = "fireflower";
-  b.set(4, 38, "?");
-  b.set(4, 40, "?");
+  for (let seg = 0; seg < numSegments; seg++) {
+    const segStart = startZone + seg * segW;
+    const center = segStart + Math.floor(segW / 2);
 
-  [15, 26, 42, 58, 74, 92].forEach((c) => b.set(7, c, "g"));
-  [46, 97].forEach((c) => b.set(7, c, "k"));
+    if (seg === 0) {
+      b.set(4, center, "?");
+      blockContents[`${center},4`] = powerupType;
+      continue;
+    }
+    if (giveOneUp && seg === numSegments - 1) {
+      b.setRange(4, center - 1, center + 1, "B");
+      b.set(4, center, "?");
+      blockContents[`${center},4`] = "oneup";
+      continue;
+    }
 
-  b.set(5, 2, "M");
+    const choice = featurePool[Math.floor(rand() * featurePool.length)];
+    if (choice === "pit") {
+      b.set(ROWS - 2, center, ".");
+      b.set(ROWS - 2, center + 1, ".");
+      b.set(ROWS - 1, center, ".");
+      b.set(ROWS - 1, center + 1, ".");
+    } else if (choice === "pipe") {
+      b.placePipe(center, ROWS - 4, 2);
+    } else if (choice === "goomba") {
+      b.set(7, center, "g");
+    } else if (choice === "koopa") {
+      b.set(7, center, "k");
+    } else if (choice === "coinblock") {
+      b.set(4, center, "?");
+    }
+  }
 
-  const afterStairs = b.addStaircase(101, 4, ROWS - 2);
-  const flagCol = afterStairs + 2;
-  b.set(4, flagCol, "F");
-
-  return finishOverworldLevel("2-1", b, ROWS, COLS, blockContents, warpPipes, flagCol);
-}
-
-// World 2-2: the finale. A mushroom, a hidden 1-up, and the toughest gauntlet.
-function buildLevel2_2() {
-  const ROWS = 10;
-  const COLS = 130;
-  const b = makeGridBuilder(ROWS, COLS);
-  const blockContents = {};
-  const warpPipes = {};
-
-  b.setRange(ROWS - 2, 0, COLS - 1, "G");
-  b.setRange(ROWS - 1, 0, COLS - 1, "G");
-  pits(b, ROWS, [[18, 19], [40, 41], [64, 65], [96, 97]]);
-
-  [10, 35, 60, 85, 108].forEach((c) => b.set(1, c, "c"));
-  [8, 30, 55, 80, 103].forEach((c) => b.set(7, c, "H"));
-  [15, 45, 70, 92].forEach((c) => b.set(7, c, "b"));
-
-  b.placePipe(25, 6, 2);
-  b.placePipe(50, 6, 2);
-  b.placePipe(88, 6, 2);
-
-  b.set(4, 12, "?");
-  blockContents["12,4"] = "mushroom";
-
-  b.setRange(4, 74, 76, "B");
-  b.set(4, 75, "?");
-  blockContents["75,4"] = "oneup";
-
-  [16, 33, 47, 62, 78, 94, 106].forEach((c) => b.set(7, c, "g"));
-  [56, 70, 100].forEach((c) => b.set(7, c, "k"));
+  // Scattered decor; skip any cell a feature already claimed.
+  for (let c = 4; c < COLS - 4; c += 6) {
+    const r = rand();
+    if (r < 0.25) b.set(1, c, "c");
+    else if (r < 0.45 && b.grid[7][c] === ".") b.set(7, c, "H");
+    else if (r < 0.55 && b.grid[7][c] === ".") b.set(7, c, "b");
+  }
 
   b.set(5, 2, "M");
 
-  const afterStairs = b.addStaircase(111, 4, ROWS - 2);
+  const stairsStart = COLS - endZone + 2;
+  // Barrier pit right before the stairs: patrolling enemies turn around at
+  // its edge and can never wander onto the staircase.
+  b.set(ROWS - 2, stairsStart - 3, ".");
+  b.set(ROWS - 2, stairsStart - 2, ".");
+  b.set(ROWS - 1, stairsStart - 3, ".");
+  b.set(ROWS - 1, stairsStart - 2, ".");
+  const afterStairs = b.addStaircase(stairsStart, 4, ROWS - 2);
   const flagCol = afterStairs + 2;
   b.set(4, flagCol, "F");
 
-  return finishOverworldLevel("2-2", b, ROWS, COLS, blockContents, warpPipes, flagCol);
+  const id = `${worldNum}-${levelNum}`;
+  return finishOverworldLevel(id, b, ROWS, COLS, blockContents, warpPipes, flagCol);
 }
 
 function buildUnderground() {
@@ -256,16 +256,23 @@ function buildUnderground() {
 }
 
 const WORLD_REGISTRY = {}; // populated by initWorlds(): name -> world object
-const LEVEL_ORDER = ["1-1", "1-2", "2-1", "2-2"];
+const LEVEL_ORDER = [];
+for (let w = 1; w <= WORLDS_COUNT; w++) {
+  for (let l = 1; l <= LEVELS_PER_WORLD; l++) {
+    LEVEL_ORDER.push(`${w}-${l}`);
+  }
+}
 let levelIndex = 0; // index into LEVEL_ORDER for the level currently being played
 let world; // active world
 let ROWS, COLS, LEVEL_ROWS, LEVEL_PIXEL_WIDTH, LEVEL_PIXEL_HEIGHT;
 
 function initWorlds() {
   WORLD_REGISTRY["1-1"] = buildLevel1_1();
-  WORLD_REGISTRY["1-2"] = buildLevel1_2();
-  WORLD_REGISTRY["2-1"] = buildLevel2_1();
-  WORLD_REGISTRY["2-2"] = buildLevel2_2();
+  for (const id of LEVEL_ORDER) {
+    if (id === "1-1") continue;
+    const [w, l] = id.split("-").map(Number);
+    WORLD_REGISTRY[id] = buildGeneratedLevel(w, l);
+  }
   WORLD_REGISTRY.underground = buildUnderground();
 }
 
