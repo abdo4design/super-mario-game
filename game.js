@@ -51,6 +51,19 @@ function pits(b, ROWS, ranges) {
   });
 }
 
+// Places a pipe that can actually be entered (Down/S) - it warps to the
+// shared underground bonus room. Every pipe in every level uses this now,
+// so any pipe you find can be entered, not just one designated pipe per
+// level. Where you land back in the overworld is resolved dynamically at
+// warp time (see the "RETURN" handling in update()), not fixed here.
+function placeWarpPipe(b, warpPipes, colLeft, topRow, height) {
+  b.placePipe(colLeft, topRow, height);
+  warpPipes[`${colLeft},${topRow}`] = {
+    toWorld: "underground",
+    spawn: { x: 2 * TILE, y: 5 * TILE },
+  };
+}
+
 // Densely scatters goombas/koopas across [startCol, endCol), skipping any
 // column that isn't clear open ground (pits, pipes, blocks already placed
 // there). Run this AFTER all other terrain so it only fills genuine gaps.
@@ -103,9 +116,8 @@ function buildLevel1_1() {
   [6, 25, 55, 85].forEach((c) => b.set(7, c, "H"));
   [14, 45, 75].forEach((c) => b.set(7, c, "b"));
 
-  b.placePipe(10, 6, 2);
-  b.placePipe(60, 6, 2);
-  warpPipes["60,6"] = { toWorld: "underground", spawn: { x: 2 * TILE, y: 5 * TILE } };
+  placeWarpPipe(b, warpPipes, 10, 6, 2);
+  placeWarpPipe(b, warpPipes, 60, 6, 2);
 
   b.set(4, 16, "?");
   blockContents["16,4"] = "mushroom";
@@ -195,7 +207,7 @@ function buildGeneratedLevel(worldNum, levelNum) {
         b.set(ROWS - 1, center + dc, ".");
       }
     } else if (choice === "pipe") {
-      b.placePipe(center, ROWS - 4, 2);
+      placeWarpPipe(b, warpPipes, center, ROWS - 4, 2);
     } else if (choice === "coinblock") {
       b.set(4, center, "?");
     }
@@ -250,10 +262,10 @@ function buildUnderground() {
   blockContents["9,3"] = "oneup";
 
   b.placePipe(13, ROWS - 4, 2);
-  warpPipes[`13,${ROWS - 4}`] = {
-    toWorld: "1-1",
-    spawn: { x: 63 * TILE, y: 5 * TILE },
-  };
+  // Sends the player back to whichever level (and pipe) they entered from -
+  // resolved dynamically at warp time via `pendingReturn`, since any pipe in
+  // any level can now lead down here.
+  warpPipes[`13,${ROWS - 4}`] = { toWorld: "RETURN", spawn: null };
 
   return {
     name: "underground",
@@ -437,6 +449,7 @@ const KOOPA_SHELL_H = 24;
 
 let player, goombas, koopas, blocks, particles, powerups, fireballs, textPops;
 let warpCooldown = 0;
+let pendingReturn = { toWorld: "1-1", spawn: { x: 63 * TILE, y: 5 * TILE } }; // fallback if underground is ever entered without a pipe (shouldn't happen)
 
 // Scans a world's tile grid and builds fresh dynamic entity arrays for it
 // (blocks, goombas, koopas, spawn point). Called once per world the first
@@ -745,7 +758,17 @@ function update(dt) {
     const colB = colA - 1;
     const pipeCol = world.pipeLeftCols.has(colA) ? colA : world.pipeLeftCols.has(colB) ? colB : null;
     const pipe = pipeCol !== null ? world.warpPipes[`${pipeCol},${feetRow}`] : null;
-    if (pipe) warpTo(pipe.toWorld, pipe.spawn);
+    if (pipe) {
+      if (pipe.toWorld === "RETURN") {
+        warpTo(pendingReturn.toWorld, pendingReturn.spawn);
+      } else {
+        // Remember exactly where to send the player back to before leaving,
+        // so the underground room's single exit pipe can return them to
+        // whichever level (and pipe) they actually entered from.
+        pendingReturn = { toWorld: world.name, spawn: { x: (pipeCol + 3) * TILE, y: 5 * TILE } };
+        warpTo(pipe.toWorld, pipe.spawn);
+      }
+    }
   }
 
   // Blocks bump animation
