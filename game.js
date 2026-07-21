@@ -1628,12 +1628,12 @@ function drawPlayer() {
     ctx.rotate(0.09);
   }
 
-  // Draw at the small-form proportions, then scale up UNIFORMLY (both axes,
-  // from the center) to match the actual hitbox height. Scaling only the
-  // vertical axis made Big/Fire Mario look thin and stretched instead of
-  // proportionally bigger.
+  // Draw at the small-form proportions, then scale up to match the actual
+  // hitbox height. Width grows at only a fraction of the height's rate -
+  // scaling both axes equally made Big/Fire Mario look overly wide/chunky.
   const growScale = p.h / PLAYER_SMALL_H;
-  ctx.scale(growScale, growScale);
+  const widthScale = 1 + (growScale - 1) * 0.35;
+  ctx.scale(widthScale, growScale);
   ctx.translate(-PLAYER_W / 2, -PLAYER_SMALL_H / 2);
 
   const bob = hop;
