@@ -992,6 +992,7 @@ function update(dt) {
           } else {
             k.state = "sliding";
             k.vx = (player.x < k.x ? 1 : -1) * 260;
+            player.invuln = 0.4;
             sfx.stomp();
           }
         } else if (k.state === "sliding") {
