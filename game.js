@@ -43,7 +43,7 @@ function makeGridBuilder(rows, cols) {
 }
 
 function pits(b, ROWS, ranges) {
-  ranges.forEach(([c1, c2]) => {
+  ranges.forEach(([c1, c2 = c1]) => {
     for (let c = c1; c <= c2; c++) {
       b.set(ROWS - 2, c, ".");
       b.set(ROWS - 1, c, ".");
@@ -110,7 +110,7 @@ function buildLevel1_1() {
   // turn around at its edge (same cliff-avoidance that stops them falling
   // in), so nothing can ever wander up onto the stairs while the player is
   // climbing them.
-  pits(b, ROWS, [[30, 31], [80, 81], [128, 129]]);
+  pits(b, ROWS, [[30], [80], [128]]);
 
   [8, 40, 70, 95, 115].forEach((c) => b.set(1, c, "c"));
   [6, 25, 55, 85, 110].forEach((c) => b.set(7, c, "H"));
@@ -199,10 +199,7 @@ function buildGeneratedLevel(worldNum, levelNum) {
 
     const choice = featurePool[Math.floor(rand() * featurePool.length)];
     if (choice === "pit") {
-      // Always a 2-tile pit. These used to widen to 3 tiles after level 8,
-      // but that made some jumps feel nearly impossible in practice even
-      // though they were technically reachable.
-      const pitWidth = 2;
+      const pitWidth = 1;
       for (let dc = 0; dc < pitWidth; dc++) {
         b.set(ROWS - 2, center + dc, ".");
         b.set(ROWS - 1, center + dc, ".");
