@@ -308,7 +308,7 @@ function buildBossLevel() {
     flagCol: -1,
     castleCol: -1,
     hasBoss: true,
-    bossSpawn: { x: (COLS - 8) * TILE, y: (ROWS - 2) * TILE - 70 },
+    bossSpawn: { x: (COLS - 10) * TILE, y: (ROWS - 2) * TILE - 160 },
     entities: null,
   };
 }
@@ -573,8 +573,8 @@ function spawnBowser(spawn) {
   return {
     x: spawn.x,
     y: spawn.y,
-    w: 52,
-    h: 56,
+    w: 120,
+    h: 150,
     vx: -30,
     vy: 0,
     homeX: spawn.x,
@@ -1337,7 +1337,33 @@ function draw() {
 
   ctx.restore();
 
+  if (bowser && bowser.alive) drawBossHealthBar(bowser);
   drawFireworks(); // screen-space, drawn after ctx.restore() so it isn't affected by camera scroll
+}
+
+function drawBossHealthBar(k) {
+  const barW = 260;
+  const barH = 18;
+  const x = VIEW_W / 2 - barW / 2;
+  const y = 16;
+
+  ctx.font = "bold 14px monospace";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#000";
+  ctx.fillText("BOWSER", VIEW_W / 2, y - 4);
+  ctx.fillStyle = "#ffd400";
+  ctx.fillText("BOWSER", VIEW_W / 2 + 1, y - 5);
+
+  ctx.fillStyle = "#000";
+  ctx.fillRect(x - 3, y, barW + 6, barH + 6);
+  ctx.fillStyle = "#3a1010";
+  ctx.fillRect(x, y + 3, barW, barH);
+  const pct = Math.max(0, k.hp / k.maxHp);
+  ctx.fillStyle = pct > 0.5 ? "#3fae2a" : pct > 0.25 ? "#f2a91d" : "#e2382c";
+  ctx.fillRect(x, y + 3, barW * pct, barH);
+  ctx.strokeStyle = "#ffd400";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y + 3, barW, barH);
 }
 
 function drawBackground() {
@@ -1764,80 +1790,136 @@ function drawKoopa(k) {
 }
 
 function drawBowser(k) {
+  const W = k.w;
+  const H = k.h;
   ctx.save();
   ctx.translate(k.x, k.y);
   if (k.facing < 0) {
-    ctx.translate(k.w, 0);
+    ctx.translate(W, 0);
     ctx.scale(-1, 1);
   }
   if (k.hitFlashT > 0 && Math.floor(performance.now() / 50) % 2 === 0) {
     ctx.filter = "brightness(2)";
   }
 
-  // tail
-  ctx.fillStyle = "#3a8a2a";
-  ctx.fillRect(-8, k.h - 14, 10, 6);
-  // body
-  ctx.fillStyle = "#e8c23a";
-  ctx.fillRect(6, 14, k.w - 12, k.h - 20);
-  // shell spikes
-  ctx.fillStyle = "#3a8a2a";
-  for (let i = 0; i < 3; i++) {
+  const scaleColor = "#3a7a2a";
+  const darkScale = "#2a5c1e";
+  const belly = "#e8c23a";
+
+  // thick tail dragging behind
+  ctx.fillStyle = scaleColor;
+  ctx.beginPath();
+  ctx.moveTo(0, H * 0.62);
+  ctx.lineTo(W * 0.22, H * 0.58);
+  ctx.lineTo(W * 0.22, H * 0.8);
+  ctx.lineTo(0, H * 0.86);
+  ctx.closePath();
+  ctx.fill();
+
+  // hind leg (thick, dinosaur-like)
+  ctx.fillStyle = scaleColor;
+  ctx.fillRect(W * 0.2, H * 0.72, W * 0.2, H * 0.28);
+  ctx.fillStyle = darkScale;
+  ctx.fillRect(W * 0.2, H * 0.94, W * 0.22, H * 0.06);
+
+  // massive body
+  ctx.fillStyle = scaleColor;
+  ctx.beginPath();
+  ctx.ellipse(W * 0.5, H * 0.55, W * 0.32, H * 0.34, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // pale belly
+  ctx.fillStyle = belly;
+  ctx.beginPath();
+  ctx.ellipse(W * 0.52, H * 0.68, W * 0.2, H * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // front leg
+  ctx.fillStyle = scaleColor;
+  ctx.fillRect(W * 0.5, H * 0.76, W * 0.2, H * 0.24);
+  ctx.fillStyle = darkScale;
+  ctx.fillRect(W * 0.5, H * 0.94, W * 0.22, H * 0.06);
+
+  // back spikes (stegosaurus-style ridge)
+  ctx.fillStyle = darkScale;
+  for (let i = 0; i < 5; i++) {
+    const bx = W * (0.22 + i * 0.1);
+    const topY = H * (0.18 - (i % 2) * 0.03);
     ctx.beginPath();
-    ctx.moveTo(12 + i * 12, 16);
-    ctx.lineTo(18 + i * 12, 4);
-    ctx.lineTo(24 + i * 12, 16);
+    ctx.moveTo(bx, H * 0.32);
+    ctx.lineTo(bx + W * 0.05, topY);
+    ctx.lineTo(bx + W * 0.1, H * 0.32);
     ctx.closePath();
     ctx.fill();
   }
-  // legs
-  ctx.fillStyle = "#e8c23a";
-  ctx.fillRect(8, k.h - 10, 10, 10);
-  ctx.fillRect(k.w - 18, k.h - 10, 10, 10);
-  // head
-  ctx.fillStyle = "#e8c23a";
-  ctx.fillRect(k.w - 22, 6, 22, 18);
-  // horns
+
+  // tiny arm
+  ctx.fillStyle = scaleColor;
+  ctx.fillRect(W * 0.62, H * 0.58, W * 0.1, H * 0.16);
+
+  // huge head
+  ctx.fillStyle = scaleColor;
+  ctx.beginPath();
+  ctx.ellipse(W * 0.82, H * 0.36, W * 0.22, H * 0.24, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // snout / jaw
+  ctx.fillStyle = belly;
+  ctx.beginPath();
+  ctx.ellipse(W * 0.95, H * 0.42, W * 0.14, H * 0.14, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // open mouth with teeth
+  ctx.fillStyle = "#4a1208";
+  ctx.beginPath();
+  ctx.moveTo(W * 0.82, H * 0.42);
+  ctx.lineTo(W * 1.05, H * 0.44);
+  ctx.lineTo(W * 1.02, H * 0.56);
+  ctx.lineTo(W * 0.82, H * 0.52);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#fff8e0";
+  for (let i = 0; i < 4; i++) {
+    const tx = W * (0.84 + i * 0.055);
+    ctx.beginPath();
+    ctx.moveTo(tx, H * 0.43);
+    ctx.lineTo(tx + W * 0.02, H * 0.43);
+    ctx.lineTo(tx + W * 0.01, H * 0.49);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // brow horns
   ctx.fillStyle = "#fff8e0";
   ctx.beginPath();
-  ctx.moveTo(k.w - 20, 6);
-  ctx.lineTo(k.w - 16, -4);
-  ctx.lineTo(k.w - 12, 6);
+  ctx.moveTo(W * 0.74, H * 0.2);
+  ctx.lineTo(W * 0.8, H * 0.02);
+  ctx.lineTo(W * 0.84, H * 0.2);
   ctx.closePath();
   ctx.fill();
   ctx.beginPath();
-  ctx.moveTo(k.w - 10, 6);
-  ctx.lineTo(k.w - 6, -4);
-  ctx.lineTo(k.w - 2, 6);
+  ctx.moveTo(W * 0.86, H * 0.2);
+  ctx.lineTo(W * 0.92, H * 0.02);
+  ctx.lineTo(W * 0.96, H * 0.2);
   ctx.closePath();
   ctx.fill();
-  // eyebrows + eyes
+
+  // eye (angry, red)
   ctx.fillStyle = "#fff";
   ctx.beginPath();
-  ctx.arc(k.w - 15, 15, 3, 0, Math.PI * 2);
+  ctx.ellipse(W * 0.88, H * 0.32, W * 0.045, H * 0.04, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = "#c0221c";
   ctx.beginPath();
-  ctx.arc(k.w - 15, 15, 1.6, 0, Math.PI * 2);
+  ctx.arc(W * 0.9, H * 0.32, W * 0.022, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "#5a3a1a";
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = darkScale;
+  ctx.lineWidth = H * 0.03;
   ctx.beginPath();
-  ctx.moveTo(k.w - 20, 10);
-  ctx.lineTo(k.w - 11, 11);
+  ctx.moveTo(W * 0.78, H * 0.22);
+  ctx.lineTo(W * 0.94, H * 0.24);
   ctx.stroke();
-  // mouth
-  ctx.fillStyle = "#5a1c10";
-  ctx.fillRect(k.w - 20, 20, 16, 4);
 
   ctx.restore();
-
-  // health bar
-  const barW = k.w;
-  ctx.fillStyle = "#000";
-  ctx.fillRect(k.x, k.y - 12, barW, 6);
-  ctx.fillStyle = "#e2382c";
-  ctx.fillRect(k.x + 1, k.y - 11, (barW - 2) * Math.max(0, k.hp / k.maxHp), 4);
 }
 
 function drawBossFireball(f) {
