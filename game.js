@@ -124,7 +124,7 @@ function buildLevel1_1() {
   b.set(4, 18, "?");
   b.set(4, 20, "?");
 
-  scatterEnemies(b, ROWS, 22, 98, rand, 10);
+  scatterEnemies(b, ROWS, 22, 98, rand, 15);
 
   b.set(5, 2, "M");
 
@@ -221,7 +221,7 @@ function buildGeneratedLevel(worldNum, levelNum) {
   // Koopas (tougher - need a kick, not just a stomp, and can chain-kill)
   // become a bigger share of the mix as the campaign progresses.
   const koopaChance = Math.min(0.6, 0.2 + idx * 0.012);
-  scatterEnemies(b, ROWS, 22, stairsStart - 4, rand, 10, koopaChance);
+  scatterEnemies(b, ROWS, 22, stairsStart - 4, rand, 15, koopaChance);
 
   for (let c = 4; c < COLS - 4; c += 6) {
     const r = rand();
@@ -370,7 +370,7 @@ const sfx = {
     setTimeout(() => beep(880, 0.07, "square"), 70);
     setTimeout(() => beep(1046, 0.1, "square"), 140);
   },
-  fire: () => beep(180, 0.05, "square", 0.09),
+  fire: () => beep(900, 0.06, "triangle", 0.07),
   shrink: () => beep(200, 0.3, "sawtooth"),
   break: () => beep(160, 0.1, "square"),
   oneup: () => {
@@ -395,7 +395,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.code === "KeyP") togglePause();
   if (e.code === "KeyM") toggleSound();
-  if (e.code === "KeyQ" || e.code === "ControlLeft" || e.code === "ControlRight" || e.code === "KeyX") wantShoot = true;
+  if (e.code === "KeyQ" || e.code === "KeyE" || e.code === "ControlLeft" || e.code === "ControlRight" || e.code === "KeyX") wantShoot = true;
   if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) {
     e.preventDefault();
   }
@@ -442,8 +442,7 @@ let lastTime = 0;
 let camX = 0;
 
 const PLAYER_W = 24;
-const PLAYER_SMALL_H = 30;
-const PLAYER_BIG_H = 62; // a full extra tile taller than small, not just a little
+const PLAYER_SMALL_H = 30; // Mario always stays this size - power-ups change form, not height
 const KOOPA_WALK_H = 36;
 const KOOPA_SHELL_H = 24;
 
@@ -493,7 +492,7 @@ function newPlayerAt(spawn) {
     x: spawn.x,
     y: spawn.y,
     w: PLAYER_W,
-    h: PLAYER_BIG_H,
+    h: PLAYER_SMALL_H,
     vx: 0,
     vy: 0,
     onGround: false,
@@ -503,7 +502,7 @@ function newPlayerAt(spawn) {
     invuln: 0,
     animT: 0,
     won: false,
-    form: "fire", // small | big | fire - Mario starts already powered up
+    form: "small", // small | big | fire
     starT: 0,
     fireCooldown: 0,
   };
@@ -545,7 +544,6 @@ function advanceToNextLevel() {
   const keptForm = player.form;
   player = newPlayerAt(spawn);
   player.form = keptForm;
-  if (keptForm !== "small") player.h = PLAYER_BIG_H;
   timeLeft = 400;
   timeAccum = 0;
   state = "playing";
@@ -587,9 +585,6 @@ function shrinkPlayer() {
     return;
   }
   player.form = "small";
-  const diff = PLAYER_BIG_H - PLAYER_SMALL_H;
-  player.h = PLAYER_SMALL_H;
-  player.y += diff;
   player.invuln = 1.5;
   sfx.shrink();
 }
@@ -597,11 +592,10 @@ function shrinkPlayer() {
 function growPlayer(newForm, b) {
   if (player.form === "small") {
     // A fire flower picked up from Small goes straight to Fire (skipping
-    // Big) so the pickup always has a visible, guaranteed payoff.
+    // Big) so the pickup always has a visible, guaranteed payoff. Mario
+    // stays the same one-block size either way - only the form (and what
+    // it lets you do) changes.
     player.form = newForm;
-    const diff = PLAYER_BIG_H - PLAYER_SMALL_H;
-    player.h = PLAYER_BIG_H;
-    player.y -= diff;
     sfx.powerup();
     const isFire = newForm === "fire";
     spawnTextPop(b.x, b.y - TILE, isFire ? "FIRE POWER!" : "MUSHROOM!", isFire ? "#ff5a3c" : "#ffd400");
@@ -1504,28 +1498,37 @@ function drawFireball(f) {
   const dir = f.vx >= 0 ? 1 : -1;
 
   // motion trail
-  ctx.globalAlpha = 0.35;
-  ctx.fillStyle = "#ffd94d";
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = "#c7ccd6";
   ctx.beginPath();
   ctx.ellipse(cx - dir * 8, cy, 5, 2.5, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.globalAlpha = 1;
 
-  // bullet body
+  // spinning shuriken
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.scale(dir, 1);
-  ctx.fillStyle = "#e0a734";
+  ctx.rotate((f.t * 20) % (Math.PI * 2));
+  const r = f.w / 2 + 2;
+  ctx.fillStyle = "#8a8f99";
   ctx.beginPath();
-  ctx.moveTo(-f.w / 2, -3);
-  ctx.lineTo(f.w / 2 - 3, -3);
-  ctx.lineTo(f.w / 2 + 3, 0);
-  ctx.lineTo(f.w / 2 - 3, 3);
-  ctx.lineTo(-f.w / 2, 3);
+  ctx.moveTo(0, -r);
+  ctx.lineTo(r * 0.35, -r * 0.35);
+  ctx.lineTo(r, 0);
+  ctx.lineTo(r * 0.35, r * 0.35);
+  ctx.lineTo(0, r);
+  ctx.lineTo(-r * 0.35, r * 0.35);
+  ctx.lineTo(-r, 0);
+  ctx.lineTo(-r * 0.35, -r * 0.35);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = "#fff4c2";
-  ctx.fillRect(-f.w / 2, -3, 3, 2);
+  ctx.strokeStyle = "#4a4e57";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = "#4a4e57";
+  ctx.beginPath();
+  ctx.arc(0, 0, 1.8, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }
 
@@ -1695,13 +1698,28 @@ function drawPlayer() {
   ctx.fillStyle = "#000";
   ctx.fillRect(15, headY + 2 + bob * 0.4, 2, 2);
 
-  // Fire Mario carries a little gun instead of throwing bare fireballs
+  // Fire Mario carries a little shuriken instead of throwing bare fireballs
   if (isFire) {
-    ctx.fillStyle = "#5a5a5a";
-    ctx.fillRect(19, shirtY + 3 + bob * 0.4, 10, 4);
-    ctx.fillStyle = "#3a3a3a";
-    ctx.fillRect(27, shirtY + 3 + bob * 0.4, 4, 4);
-    ctx.fillRect(20, shirtY + 7 + bob * 0.4, 4, 3);
+    ctx.save();
+    ctx.translate(24, shirtY + 5 + bob * 0.4);
+    ctx.rotate((performance.now() / 150) % (Math.PI * 2));
+    ctx.fillStyle = "#8a8f99";
+    ctx.beginPath();
+    ctx.moveTo(0, -6);
+    ctx.lineTo(2, -2);
+    ctx.lineTo(6, 0);
+    ctx.lineTo(2, 2);
+    ctx.lineTo(0, 6);
+    ctx.lineTo(-2, 2);
+    ctx.lineTo(-6, 0);
+    ctx.lineTo(-2, -2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#4a4e57";
+    ctx.beginPath();
+    ctx.arc(0, 0, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   ctx.restore();
