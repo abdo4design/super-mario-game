@@ -465,7 +465,7 @@ function togglePause() {
 let state = "title"; // title | playing | paused | gameover | win
 let score = 0;
 let coins = 0;
-let lives = 3;
+let lives = 5;
 let timeLeft = 400;
 let timeAccum = 0;
 let lastTime = 0;
@@ -698,7 +698,7 @@ function patrolStep(e, dt, avoidLedges) {
 function startGame() {
   score = 0;
   coins = 0;
-  lives = 3;
+  lives = 5;
   timeLeft = 400;
   levelIndex = 0;
   buildLevel();
