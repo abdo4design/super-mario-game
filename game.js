@@ -148,7 +148,7 @@ function mulberry32(seed) {
 }
 
 const WORLDS_COUNT = 4;
-const LEVELS_PER_WORLD = 8;
+const LEVELS_PER_WORLD = 4;
 const POWERUP_CYCLE = ["mushroom", "star", "fireflower"];
 
 // Procedurally builds every level except 1-1 (which is hand-authored above
@@ -201,7 +201,7 @@ function buildGeneratedLevel(worldNum, levelNum) {
     if (choice === "pit") {
       // Pits widen in the back half of the campaign for an extra timing
       // challenge on top of the denser, faster enemies.
-      const pitWidth = idx > 16 ? 3 : 2;
+      const pitWidth = idx > 8 ? 3 : 2;
       for (let dc = 0; dc < pitWidth; dc++) {
         b.set(ROWS - 2, center + dc, ".");
         b.set(ROWS - 1, center + dc, ".");
@@ -220,7 +220,7 @@ function buildGeneratedLevel(worldNum, levelNum) {
   // fills in whatever's left over so it never steals an enemy's spot.
   // Koopas (tougher - need a kick, not just a stomp, and can chain-kill)
   // become a bigger share of the mix as the campaign progresses.
-  const koopaChance = Math.min(0.6, 0.2 + idx * 0.012);
+  const koopaChance = Math.min(0.6, 0.2 + idx * 0.025);
   scatterEnemies(b, ROWS, 22, stairsStart - 4, rand, 15, koopaChance);
 
   for (let c = 4; c < COLS - 4; c += 6) {
