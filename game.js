@@ -148,7 +148,7 @@ function mulberry32(seed) {
 }
 
 const WORLDS_COUNT = 4;
-const LEVELS_PER_WORLD = 4;
+const LEVELS_PER_WORLD = 2;
 const POWERUP_CYCLE = ["mushroom", "star", "fireflower"];
 
 // Procedurally builds every level except 1-1 (which is hand-authored above
@@ -221,7 +221,7 @@ function buildGeneratedLevel(worldNum, levelNum) {
   // fills in whatever's left over so it never steals an enemy's spot.
   // Koopas (tougher - need a kick, not just a stomp, and can chain-kill)
   // become a bigger share of the mix as the campaign progresses.
-  const koopaChance = Math.min(0.6, 0.2 + idx * 0.025);
+  const koopaChance = Math.min(0.6, 0.2 + idx * 0.05);
   scatterEnemies(b, ROWS, 22, stairsStart - 4, rand, 25, koopaChance);
 
   for (let c = 4; c < COLS - 4; c += 6) {
@@ -1125,20 +1125,26 @@ function update(dt) {
     const patrolRight = bowser.homeX + 70;
     bowser.x += bowser.vx * dt;
     if (bowser.x < patrolLeft || bowser.x > patrolRight) bowser.vx *= -1;
-    bowser.facing = bowser.vx < 0 ? -1 : 1;
+    // Faces the player rather than his movement direction, like a boss
+    // that's actually watching Mario instead of just pacing blindly.
+    bowser.facing = player.x < bowser.x ? -1 : 1;
     bowser.y += bowser.vy * dt;
     resolveTileCollisions(bowser, "y");
 
     bowser.fireCooldown -= dt;
     if (bowser.fireCooldown <= 0) {
-      const dir = player.x < bowser.x ? -1 : 1;
+      // Spawns from the mouth (drawn at ~0.95W in the unmirrored dinosaur
+      // sprite), mirrored to match whichever way he's currently facing.
+      const mouthX = bowser.facing > 0 ? bowser.x + bowser.w * 0.95 : bowser.x + bowser.w * 0.05;
+      const mouthY = bowser.y + bowser.h * 0.48;
+      const dir = bowser.facing;
       bossFireballs.push({
-        x: bowser.x + bowser.w / 2,
-        y: bowser.y + bowser.h - 20,
-        vx: 150 * dir,
-        vy: -260,
-        w: 12,
-        h: 12,
+        x: mouthX,
+        y: mouthY,
+        vx: 180 * dir,
+        vy: -180,
+        w: 14,
+        h: 14,
         t: 0,
       });
       bowser.fireCooldown = 2.5;
