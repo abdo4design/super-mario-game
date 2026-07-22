@@ -199,9 +199,10 @@ function buildGeneratedLevel(worldNum, levelNum) {
 
     const choice = featurePool[Math.floor(rand() * featurePool.length)];
     if (choice === "pit") {
-      // Pits widen in the back half of the campaign for an extra timing
-      // challenge on top of the denser, faster enemies.
-      const pitWidth = idx > 8 ? 3 : 2;
+      // Always a 2-tile pit. These used to widen to 3 tiles after level 8,
+      // but that made some jumps feel nearly impossible in practice even
+      // though they were technically reachable.
+      const pitWidth = 2;
       for (let dc = 0; dc < pitWidth; dc++) {
         b.set(ROWS - 2, center + dc, ".");
         b.set(ROWS - 1, center + dc, ".");
