@@ -729,10 +729,10 @@ function loseLife() {
 
 // ---------- Physics constants ----------
 const GRAVITY = 1600;
-const MOVE_ACCEL = 900;
-const MAX_RUN = 260;
-const MAX_WALK = 160;
-const FRICTION = 1200;
+const MOVE_ACCEL = 1350;
+const MAX_RUN = 390;
+const MAX_WALK = 240;
+const FRICTION = 1800;
 const JUMP_VELOCITY = -520;
 
 function rectsOverlap(a, b) {
