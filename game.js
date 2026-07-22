@@ -98,7 +98,7 @@ function finishOverworldLevel(id, b, ROWS, COLS, blockContents, warpPipes, flagC
 // underground bonus room, and a short staircase up to the flag.
 function buildLevel1_1() {
   const ROWS = 10;
-  const COLS = 120;
+  const COLS = 150;
   const b = makeGridBuilder(ROWS, COLS);
   const blockContents = {};
   const warpPipes = {};
@@ -110,11 +110,11 @@ function buildLevel1_1() {
   // turn around at its edge (same cliff-avoidance that stops them falling
   // in), so nothing can ever wander up onto the stairs while the player is
   // climbing them.
-  pits(b, ROWS, [[30, 31], [80, 81], [98, 99]]);
+  pits(b, ROWS, [[30, 31], [80, 81], [128, 129]]);
 
-  [8, 40, 70, 95].forEach((c) => b.set(1, c, "c"));
-  [6, 25, 55, 85].forEach((c) => b.set(7, c, "H"));
-  [14, 45, 75].forEach((c) => b.set(7, c, "b"));
+  [8, 40, 70, 95, 115].forEach((c) => b.set(1, c, "c"));
+  [6, 25, 55, 85, 110].forEach((c) => b.set(7, c, "H"));
+  [14, 45, 75, 105].forEach((c) => b.set(7, c, "b"));
 
   placeWarpPipe(b, warpPipes, 10, 6, 2);
   placeWarpPipe(b, warpPipes, 60, 6, 2);
@@ -124,11 +124,11 @@ function buildLevel1_1() {
   b.set(4, 18, "?");
   b.set(4, 20, "?");
 
-  scatterEnemies(b, ROWS, 22, 98, rand, 15);
+  scatterEnemies(b, ROWS, 22, 124, rand, 25);
 
   b.set(5, 2, "M");
 
-  const afterStairs = b.addStaircase(101, 4, ROWS - 2);
+  const afterStairs = b.addStaircase(131, 4, ROWS - 2);
   const flagCol = afterStairs + 2;
   b.set(4, flagCol, "F");
 
@@ -221,7 +221,7 @@ function buildGeneratedLevel(worldNum, levelNum) {
   // Koopas (tougher - need a kick, not just a stomp, and can chain-kill)
   // become a bigger share of the mix as the campaign progresses.
   const koopaChance = Math.min(0.6, 0.2 + idx * 0.025);
-  scatterEnemies(b, ROWS, 22, stairsStart - 4, rand, 15, koopaChance);
+  scatterEnemies(b, ROWS, 22, stairsStart - 4, rand, 25, koopaChance);
 
   for (let c = 4; c < COLS - 4; c += 6) {
     const r = rand();
