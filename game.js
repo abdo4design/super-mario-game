@@ -403,7 +403,7 @@ const sfx = {
     setTimeout(() => beep(880, 0.07, "square"), 70);
     setTimeout(() => beep(1046, 0.1, "square"), 140);
   },
-  fire: () => beep(900, 0.06, "triangle", 0.07),
+  fire: () => beep(180, 0.05, "square", 0.09),
   shrink: () => beep(200, 0.3, "sawtooth"),
   break: () => beep(160, 0.1, "square"),
   oneup: () => {
@@ -1668,37 +1668,28 @@ function drawFireball(f) {
   const dir = f.vx >= 0 ? 1 : -1;
 
   // motion trail
-  ctx.globalAlpha = 0.3;
-  ctx.fillStyle = "#c7ccd6";
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = "#ffd94d";
   ctx.beginPath();
   ctx.ellipse(cx - dir * 8, cy, 5, 2.5, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.globalAlpha = 1;
 
-  // spinning shuriken
+  // bullet body
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate((f.t * 20) % (Math.PI * 2));
-  const r = f.w / 2 + 2;
-  ctx.fillStyle = "#8a8f99";
+  ctx.scale(dir, 1);
+  ctx.fillStyle = "#e0a734";
   ctx.beginPath();
-  ctx.moveTo(0, -r);
-  ctx.lineTo(r * 0.35, -r * 0.35);
-  ctx.lineTo(r, 0);
-  ctx.lineTo(r * 0.35, r * 0.35);
-  ctx.lineTo(0, r);
-  ctx.lineTo(-r * 0.35, r * 0.35);
-  ctx.lineTo(-r, 0);
-  ctx.lineTo(-r * 0.35, -r * 0.35);
+  ctx.moveTo(-f.w / 2, -3);
+  ctx.lineTo(f.w / 2 - 3, -3);
+  ctx.lineTo(f.w / 2 + 3, 0);
+  ctx.lineTo(f.w / 2 - 3, 3);
+  ctx.lineTo(-f.w / 2, 3);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "#4a4e57";
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  ctx.fillStyle = "#4a4e57";
-  ctx.beginPath();
-  ctx.arc(0, 0, 1.8, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.fillStyle = "#fff4c2";
+  ctx.fillRect(-f.w / 2, -3, 3, 2);
   ctx.restore();
 }
 
@@ -2012,28 +2003,13 @@ function drawPlayer() {
   ctx.fillStyle = "#000";
   ctx.fillRect(15, headY + 2 + bob * 0.4, 2, 2);
 
-  // Fire Mario carries a little shuriken instead of throwing bare fireballs
+  // Fire Mario carries a little gun instead of throwing bare fireballs
   if (isFire) {
-    ctx.save();
-    ctx.translate(24, shirtY + 5 + bob * 0.4);
-    ctx.rotate((performance.now() / 150) % (Math.PI * 2));
-    ctx.fillStyle = "#8a8f99";
-    ctx.beginPath();
-    ctx.moveTo(0, -6);
-    ctx.lineTo(2, -2);
-    ctx.lineTo(6, 0);
-    ctx.lineTo(2, 2);
-    ctx.lineTo(0, 6);
-    ctx.lineTo(-2, 2);
-    ctx.lineTo(-6, 0);
-    ctx.lineTo(-2, -2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#4a4e57";
-    ctx.beginPath();
-    ctx.arc(0, 0, 1.6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    ctx.fillStyle = "#5a5a5a";
+    ctx.fillRect(19, shirtY + 3 + bob * 0.4, 10, 4);
+    ctx.fillStyle = "#3a3a3a";
+    ctx.fillRect(27, shirtY + 3 + bob * 0.4, 4, 4);
+    ctx.fillRect(20, shirtY + 7 + bob * 0.4, 4, 3);
   }
 
   ctx.restore();
