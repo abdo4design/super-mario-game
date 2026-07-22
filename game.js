@@ -282,6 +282,36 @@ function buildUnderground() {
   };
 }
 
+// The final stage after clearing all the regular levels: a short castle
+// arena ending in a Bowser fight instead of a flag. There's no flagCol here
+// - winning is handled separately by watching bowser.alive in update().
+function buildBossLevel() {
+  const ROWS = 10;
+  const COLS = 44;
+  const b = makeGridBuilder(ROWS, COLS);
+
+  b.setRange(ROWS - 2, 0, COLS - 1, "G");
+  b.setRange(ROWS - 1, 0, COLS - 1, "G");
+  b.set(5, 2, "M");
+
+  return {
+    name: "BOSS",
+    theme: "castle",
+    rows: b.grid.map((row) => row.join("")),
+    ROWS,
+    COLS,
+    blockContents: {},
+    pipeLeftCols: b.pipeLeftCols,
+    warpPipes: {},
+    flagRow: -1,
+    flagCol: -1,
+    castleCol: -1,
+    hasBoss: true,
+    bossSpawn: { x: (COLS - 8) * TILE, y: (ROWS - 2) * TILE - 70 },
+    entities: null,
+  };
+}
+
 const WORLD_REGISTRY = {}; // populated by initWorlds(): name -> world object
 const LEVEL_ORDER = [];
 for (let w = 1; w <= WORLDS_COUNT; w++) {
@@ -289,14 +319,16 @@ for (let w = 1; w <= WORLDS_COUNT; w++) {
     LEVEL_ORDER.push(`${w}-${l}`);
   }
 }
+LEVEL_ORDER.push("BOSS"); // final stage after clearing every regular level
 let levelIndex = 0; // index into LEVEL_ORDER for the level currently being played
 let world; // active world
 let ROWS, COLS, LEVEL_ROWS, LEVEL_PIXEL_WIDTH, LEVEL_PIXEL_HEIGHT;
 
 function initWorlds() {
   WORLD_REGISTRY["1-1"] = buildLevel1_1();
+  WORLD_REGISTRY["BOSS"] = buildBossLevel();
   for (const id of LEVEL_ORDER) {
-    if (id === "1-1") continue;
+    if (id === "1-1" || id === "BOSS") continue;
     const [w, l] = id.split("-").map(Number);
     WORLD_REGISTRY[id] = buildGeneratedLevel(w, l);
   }
@@ -447,6 +479,8 @@ const KOOPA_WALK_H = 36;
 const KOOPA_SHELL_H = 24;
 
 let player, goombas, koopas, blocks, particles, powerups, fireballs, textPops;
+let bowser = null;
+let bossFireballs = [];
 let warpCooldown = 0;
 let pendingReturn = { toWorld: "1-1", spawn: { x: 63 * TILE, y: 5 * TILE } }; // fallback if underground is ever entered without a pipe (shouldn't happen)
 
@@ -526,10 +560,30 @@ function loadCurrentLevel() {
   powerups = [];
   fireballs = [];
   textPops = [];
+  bossFireballs = [];
   warpCooldown = 0;
   camX = 0;
   worldEl.textContent = id;
+  bowser = world.hasBoss ? spawnBowser(world.bossSpawn) : null;
   return ent.spawn;
+}
+
+function spawnBowser(spawn) {
+  return {
+    x: spawn.x,
+    y: spawn.y,
+    w: 52,
+    h: 56,
+    vx: -30,
+    vy: 0,
+    homeX: spawn.x,
+    facing: -1,
+    hp: 5,
+    maxHp: 5,
+    alive: true,
+    hitFlashT: 0,
+    fireCooldown: 2,
+  };
 }
 
 function buildLevel() {
@@ -1047,9 +1101,90 @@ function update(dt) {
         f.dead = true;
       }
     }
+    if (bowser && bowser.alive && rectsOverlap(f, bowser)) {
+      bowser.hp--;
+      bowser.hitFlashT = 0.15;
+      f.dead = true;
+      sfx.bump();
+      if (bowser.hp <= 0) {
+        bowser.alive = false;
+        score += 5000;
+        sfx.win();
+      }
+    }
     if (f.t > 3 || f.x < camX - 100 || f.x > camX + VIEW_W + 100) f.dead = true;
   }
   fireballs = fireballs.filter((f) => !f.dead);
+
+  // ---------- Bowser (final boss) ----------
+  if (bowser && bowser.alive) {
+    if (bowser.hitFlashT > 0) bowser.hitFlashT -= dt;
+    bowser.vy += GRAVITY * dt;
+    const patrolLeft = bowser.homeX - 70;
+    const patrolRight = bowser.homeX + 70;
+    bowser.x += bowser.vx * dt;
+    if (bowser.x < patrolLeft || bowser.x > patrolRight) bowser.vx *= -1;
+    bowser.facing = bowser.vx < 0 ? -1 : 1;
+    bowser.y += bowser.vy * dt;
+    resolveTileCollisions(bowser, "y");
+
+    bowser.fireCooldown -= dt;
+    if (bowser.fireCooldown <= 0) {
+      const dir = player.x < bowser.x ? -1 : 1;
+      bossFireballs.push({
+        x: bowser.x + bowser.w / 2,
+        y: bowser.y + bowser.h - 20,
+        vx: 150 * dir,
+        vy: -260,
+        w: 12,
+        h: 12,
+        t: 0,
+      });
+      bowser.fireCooldown = 2.5;
+      sfx.fire();
+    }
+
+    if (!player.dead && rectsOverlap(player, bowser)) {
+      if (player.starT > 0) {
+        bowser.hp--;
+        bowser.hitFlashT = 0.15;
+        if (bowser.hp <= 0) {
+          bowser.alive = false;
+          score += 5000;
+          sfx.win();
+        }
+      } else if (player.invuln <= 0) {
+        shrinkPlayer();
+        player.vx = (player.x < bowser.x ? -1 : 1) * 300;
+      }
+    }
+  }
+
+  for (const f of bossFireballs) {
+    f.vy += GRAVITY * dt;
+    f.x += f.vx * dt;
+    f.y += f.vy * dt;
+    f.t += dt;
+    const footRow = Math.floor((f.y + f.h) / TILE);
+    const col = Math.floor((f.x + f.w / 2) / TILE);
+    if (isSolidTile(tileAt(col, footRow)) && f.vy > 0) f.dead = true;
+    if (!player.dead && player.starT <= 0 && player.invuln <= 0 && rectsOverlap(player, f)) {
+      shrinkPlayer();
+      f.dead = true;
+    }
+    if (f.t > 4) f.dead = true;
+  }
+  bossFireballs = bossFireballs.filter((f) => !f.dead);
+
+  if (bowser && !bowser.alive && !player.won) {
+    player.won = true;
+    player.vx = 0;
+    sfx.win();
+    setTimeout(() => {
+      state = "win";
+      showWinOverlay();
+    }, 800);
+  }
 
   // ---------- Text pops ----------
   for (const tp of textPops) {
@@ -1178,7 +1313,7 @@ function resolveTileCollisions(entity, axis) {
 // ---------- Rendering ----------
 function draw() {
   ctx.imageSmoothingEnabled = false;
-  ctx.fillStyle = world.theme === "underground" ? "#0c0c1a" : "#6b8cff";
+  ctx.fillStyle = world.theme === "underground" ? "#0c0c1a" : world.theme === "castle" ? "#241014" : "#6b8cff";
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
   ctx.save();
@@ -1193,6 +1328,8 @@ function draw() {
   for (const p of powerups) drawPowerup(p);
   for (const g of goombas) drawGoomba(g);
   for (const k of koopas) drawKoopa(k);
+  if (bowser && bowser.alive) drawBowser(bowser);
+  for (const f of bossFireballs) drawBossFireball(f);
   for (const f of fireballs) drawFireball(f);
   if (!(state === "title")) drawPlayer();
   drawTextPops();
@@ -1623,6 +1760,94 @@ function drawKoopa(k) {
   }
 
   ctx.restore();
+}
+
+function drawBowser(k) {
+  ctx.save();
+  ctx.translate(k.x, k.y);
+  if (k.facing < 0) {
+    ctx.translate(k.w, 0);
+    ctx.scale(-1, 1);
+  }
+  if (k.hitFlashT > 0 && Math.floor(performance.now() / 50) % 2 === 0) {
+    ctx.filter = "brightness(2)";
+  }
+
+  // tail
+  ctx.fillStyle = "#3a8a2a";
+  ctx.fillRect(-8, k.h - 14, 10, 6);
+  // body
+  ctx.fillStyle = "#e8c23a";
+  ctx.fillRect(6, 14, k.w - 12, k.h - 20);
+  // shell spikes
+  ctx.fillStyle = "#3a8a2a";
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(12 + i * 12, 16);
+    ctx.lineTo(18 + i * 12, 4);
+    ctx.lineTo(24 + i * 12, 16);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // legs
+  ctx.fillStyle = "#e8c23a";
+  ctx.fillRect(8, k.h - 10, 10, 10);
+  ctx.fillRect(k.w - 18, k.h - 10, 10, 10);
+  // head
+  ctx.fillStyle = "#e8c23a";
+  ctx.fillRect(k.w - 22, 6, 22, 18);
+  // horns
+  ctx.fillStyle = "#fff8e0";
+  ctx.beginPath();
+  ctx.moveTo(k.w - 20, 6);
+  ctx.lineTo(k.w - 16, -4);
+  ctx.lineTo(k.w - 12, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(k.w - 10, 6);
+  ctx.lineTo(k.w - 6, -4);
+  ctx.lineTo(k.w - 2, 6);
+  ctx.closePath();
+  ctx.fill();
+  // eyebrows + eyes
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.arc(k.w - 15, 15, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#c0221c";
+  ctx.beginPath();
+  ctx.arc(k.w - 15, 15, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#5a3a1a";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(k.w - 20, 10);
+  ctx.lineTo(k.w - 11, 11);
+  ctx.stroke();
+  // mouth
+  ctx.fillStyle = "#5a1c10";
+  ctx.fillRect(k.w - 20, 20, 16, 4);
+
+  ctx.restore();
+
+  // health bar
+  const barW = k.w;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(k.x, k.y - 12, barW, 6);
+  ctx.fillStyle = "#e2382c";
+  ctx.fillRect(k.x + 1, k.y - 11, (barW - 2) * Math.max(0, k.hp / k.maxHp), 4);
+}
+
+function drawBossFireball(f) {
+  ctx.fillStyle = "#ff8a3c";
+  ctx.beginPath();
+  ctx.arc(f.x + f.w / 2, f.y + f.h / 2, f.w / 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#ffd400";
+  ctx.beginPath();
+  ctx.arc(f.x + f.w / 2, f.y + f.h / 2, f.w / 4, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawPlayer() {
