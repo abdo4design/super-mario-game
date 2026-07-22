@@ -502,7 +502,7 @@ function newPlayerAt(spawn) {
     invuln: 0,
     animT: 0,
     won: false,
-    form: "small", // small | big | fire
+    form: "fire", // small | big | fire - Mario starts with the shuriken already
     starT: 0,
     fireCooldown: 0,
   };
