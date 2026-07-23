@@ -27,6 +27,11 @@ const selectScreen = document.getElementById("select-screen");
 const deathScreen = document.getElementById("death-screen");
 const winScreen = document.getElementById("win-screen");
 const levelGrid = document.getElementById("level-grid");
+const exitBtn = document.getElementById("exit-btn");
+exitBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  showSelect();
+});
 
 // ---------------------------------------------------------------- Audio ---
 let muted = false;
@@ -94,8 +99,8 @@ const LEVEL_DEFS = [
 // game's escalating challenge without reusing its actual layouts.
 function generateLevel(idx) {
   const rand = mulberry32(idx * 7919 + 13);
-  const speed = 380 * (1 + (idx - 1) * 0.035);
-  const density = Math.min(0.8, 0.18 + (idx - 1) * 0.03);
+  const speed = 380 * (1 + (idx - 1) * 0.018);
+  const density = Math.min(0.5, 0.16 + (idx - 1) * 0.016);
   const numSegments = 34 + idx * 2;
   const jumpDist = speed * JUMP_AIR_TIME;
   const unit = Math.max(170, jumpDist * 0.75);
@@ -106,34 +111,59 @@ function generateLevel(idx) {
   let cursor = unit * 3; // safe run-up before first hazard
   floors.push({ x1: 0, x2: cursor, topY: GROUND_Y });
 
+  // Every segment reserves a guaranteed-clear runway at its start so a
+  // hazard can never land right on the heels of the previous one (that
+  // "impossible" back-to-back case, e.g. a spike immediately followed by
+  // a block wall with no reaction time).
+  const buffer = unit * 0.4;
+  let lastWasHazard = false;
+
   for (let seg = 0; seg < numSegments; seg++) {
     const r = rand();
     const segX = cursor;
+    const hazardStart = segX + buffer;
+    const hazardSpan = unit - buffer;
+
+    // Never two hazard segments back to back, regardless of density — every
+    // hazard is guaranteed a full clear segment to recover in afterward.
+    if (lastWasHazard) {
+      floors.push({ x1: segX, x2: segX + unit, topY: GROUND_Y });
+      lastWasHazard = false;
+      cursor = segX + unit;
+      continue;
+    }
 
     if (r < density * 0.32) {
       // single spike
-      obstacles.push({ x: segX + unit * 0.5, type: "spike", w: 30, h: 30 });
+      obstacles.push({ x: hazardStart + hazardSpan * 0.4, type: "spike", w: 30, h: 30 });
       floors.push({ x1: segX, x2: segX + unit, topY: GROUND_Y });
+      lastWasHazard = true;
     } else if (r < density * 0.5) {
       // double spike cluster
-      obstacles.push({ x: segX + unit * 0.45, type: "spike", w: 30, h: 30 });
-      obstacles.push({ x: segX + unit * 0.45 + 32, type: "spike", w: 30, h: 30 });
+      obstacles.push({ x: hazardStart, type: "spike", w: 30, h: 30 });
+      obstacles.push({ x: hazardStart + 32, type: "spike", w: 30, h: 30 });
       floors.push({ x1: segX, x2: segX + unit, topY: GROUND_Y });
+      lastWasHazard = true;
     } else if (r < density * 0.72) {
       // raised block to hop onto
       const h = 40 + Math.floor(rand() * 2) * 40;
       const bh = Math.min(h, MAX_BLOCK_HEIGHT);
-      const w = unit * 0.55;
-      floors.push({ x1: segX, x2: segX + w, topY: GROUND_Y - bh, block: true });
-      floors.push({ x1: segX + w, x2: segX + unit, topY: GROUND_Y });
+      const w = hazardSpan * 0.65;
+      floors.push({ x1: segX, x2: hazardStart, topY: GROUND_Y });
+      floors.push({ x1: hazardStart, x2: hazardStart + w, topY: GROUND_Y - bh, block: true });
+      floors.push({ x1: hazardStart + w, x2: segX + unit, topY: GROUND_Y });
+      lastWasHazard = true;
     } else if (r < density * 0.9) {
       // pit gap — always narrower than a safe jump distance
-      const gapW = Math.min(jumpDist * 0.55, unit * 0.5);
-      floors.push({ x1: segX, x2: segX + gapW, topY: null });
-      floors.push({ x1: segX + gapW, x2: segX + unit, topY: GROUND_Y });
+      const gapW = Math.min(jumpDist * 0.55, hazardSpan * 0.6);
+      floors.push({ x1: segX, x2: hazardStart, topY: GROUND_Y });
+      floors.push({ x1: hazardStart, x2: hazardStart + gapW, topY: null });
+      floors.push({ x1: hazardStart + gapW, x2: segX + unit, topY: GROUND_Y });
+      lastWasHazard = true;
     } else {
       // clear stretch, just floor
       floors.push({ x1: segX, x2: segX + unit, topY: GROUND_Y });
+      lastWasHazard = false;
     }
 
     cursor = segX + unit;
@@ -142,7 +172,22 @@ function generateLevel(idx) {
   const levelLength = cursor + 300;
   floors.push({ x1: cursor, x2: levelLength + 400, topY: GROUND_Y });
 
-  return { obstacles, floors, length: levelLength, speed, def: LEVEL_DEFS[idx - 1] };
+  // Purely decorative floating background shapes — no collision, just
+  // ambience. Two depth layers give a parallax feel as the camera scrolls.
+  const bgShapes = [];
+  for (let i = 0; i < Math.ceil(levelLength / 260); i++) {
+    const layer = rand() < 0.5 ? 0 : 1;
+    bgShapes.push({
+      x: i * 260 + rand() * 200,
+      y: 40 + rand() * (GROUND_Y - 140),
+      size: 14 + rand() * (layer === 0 ? 34 : 18),
+      shape: Math.floor(rand() * 3), // 0 circle, 1 square, 2 triangle
+      layer,
+      rot: rand() * Math.PI,
+    });
+  }
+
+  return { obstacles, floors, length: levelLength, speed, def: LEVEL_DEFS[idx - 1], bgShapes };
 }
 
 function floorAt(floors, x) {
@@ -168,6 +213,7 @@ try {
 
 const player = { x: 0, y: GROUND_Y - PLAYER_SIZE, vy: 0, onGround: true, rot: 0 };
 let particles = [];
+let trail = [];
 let wantJump = false;
 let paused = false;
 
@@ -179,6 +225,7 @@ function resetPlayer() {
   player.rot = 0;
   camX = 0;
   particles = [];
+  trail = [];
 }
 
 function startLevel(idx) {
@@ -189,6 +236,7 @@ function startLevel(idx) {
   state = "play";
   hideAllOverlays();
   hudLevelName.textContent = level.def.name;
+  exitBtn.classList.remove("hidden");
 }
 
 function retryLevel() {
@@ -196,6 +244,7 @@ function retryLevel() {
   resetPlayer();
   state = "play";
   hideAllOverlays();
+  exitBtn.classList.remove("hidden");
 }
 
 function hideAllOverlays() {
@@ -209,6 +258,7 @@ function showSelect() {
   state = "select";
   hideAllOverlays();
   selectScreen.classList.remove("hidden");
+  exitBtn.classList.add("hidden");
 }
 
 function buildLevelGrid() {
@@ -319,6 +369,27 @@ titleScreen.addEventListener("click", startLevelSelectFromTitle);
 winScreen.addEventListener("click", showSelect);
 
 // -------------------------------------------------------------- Rendering -
+function drawShape(shape, x, y, size, rot) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  if (shape === 0) {
+    ctx.beginPath();
+    ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (shape === 1) {
+    ctx.strokeRect(-size / 2, -size / 2, size, size);
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(0, -size / 2);
+    ctx.lineTo(size / 2, size / 2);
+    ctx.lineTo(-size / 2, size / 2);
+    ctx.closePath();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawBackground() {
   const grad = ctx.createLinearGradient(0, 0, 0, VIEW_H);
   const c1 = level ? level.def.c1 : "#2ee6a8";
@@ -337,6 +408,32 @@ function drawBackground() {
     ctx.fillRect(x - offset, 0, stripeW, VIEW_H);
   }
   ctx.globalAlpha = 1;
+
+  // floating decorative geometry (two parallax depths, no collision)
+  if (level && level.bgShapes) {
+    ctx.lineWidth = 2;
+    const startX = camX - PLAYER_SCREEN_X - 300;
+    const endX = startX + VIEW_W + 600;
+    for (const s of level.bgShapes) {
+      if (s.x < startX || s.x > endX) continue;
+      const depth = s.layer === 0 ? 0.35 : 0.6;
+      const sx = s.x - camX * depth + PLAYER_SCREEN_X;
+      ctx.globalAlpha = s.layer === 0 ? 0.1 : 0.18;
+      ctx.strokeStyle = c1;
+      drawShape(s.shape, sx, s.y, s.size, s.rot + camX * 0.0006);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // subtle vignette for depth
+  const vg = ctx.createRadialGradient(
+    VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.35,
+    VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.9
+  );
+  vg.addColorStop(0, "rgba(0,0,0,0)");
+  vg.addColorStop(1, "rgba(0,0,0,0.35)");
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 }
 
 function drawGroundAndBlocks() {
@@ -349,16 +446,50 @@ function drawGroundAndBlocks() {
     if (f.topY === null) continue; // pit — nothing drawn, it's a gap
     const topScreenY = f.topY;
     if (f.block) {
+      const blockH = VIEW_H - topScreenY;
       ctx.fillStyle = level.def.c1;
-      ctx.fillRect(sx, topScreenY, w, VIEW_H - topScreenY);
-      ctx.strokeStyle = "rgba(255,255,255,0.4)";
+      ctx.fillRect(sx, topScreenY, w, blockH);
+
+      // diagonal stripe texture
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(sx, topScreenY, w, blockH);
+      ctx.clip();
+      ctx.strokeStyle = "rgba(255,255,255,0.18)";
+      ctx.lineWidth = 6;
+      for (let d = -blockH; d < w + blockH; d += 18) {
+        ctx.beginPath();
+        ctx.moveTo(sx + d, topScreenY + blockH);
+        ctx.lineTo(sx + d + blockH, topScreenY);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      ctx.strokeStyle = "rgba(255,255,255,0.5)";
       ctx.lineWidth = 2;
-      ctx.strokeRect(sx, topScreenY, w, VIEW_H - topScreenY);
+      ctx.strokeRect(sx, topScreenY, w, blockH);
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.fillRect(sx, topScreenY, w, 4);
     } else {
       ctx.fillStyle = "#20202f";
       ctx.fillRect(sx, topScreenY, w, VIEW_H - topScreenY);
+
+      // ground tick-mark texture
+      ctx.strokeStyle = "rgba(255,255,255,0.06)";
+      ctx.lineWidth = 2;
+      const tickStart = Math.floor((f.x1 - camX + PLAYER_SCREEN_X) / 24) * 24;
+      for (let tx = tickStart; tx < sx + w; tx += 24) {
+        if (tx < sx) continue;
+        ctx.beginPath();
+        ctx.moveTo(tx, topScreenY + 10);
+        ctx.lineTo(tx, VIEW_H);
+        ctx.stroke();
+      }
+
       ctx.fillStyle = level.def.c1;
       ctx.fillRect(sx, topScreenY, w, 6);
+      ctx.fillStyle = "rgba(255,255,255,0.4)";
+      ctx.fillRect(sx, topScreenY + 6, w, 2);
     }
   }
 }
@@ -370,18 +501,39 @@ function drawObstacles() {
     if (o.x + o.w < startX || o.x - o.w > endX) continue;
     const sx = o.x - camX + PLAYER_SCREEN_X;
     if (o.type === "spike") {
-      ctx.fillStyle = "#e8e8f0";
+      ctx.save();
+      ctx.shadowColor = level.def.c1;
+      ctx.shadowBlur = 14;
+      const grad = ctx.createLinearGradient(sx, GROUND_Y - o.h, sx, GROUND_Y);
+      grad.addColorStop(0, "#ffffff");
+      grad.addColorStop(1, level.def.c1);
+      ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.moveTo(sx, GROUND_Y);
       ctx.lineTo(sx + o.w / 2, GROUND_Y - o.h);
       ctx.lineTo(sx + o.w, GROUND_Y);
       ctx.closePath();
       ctx.fill();
+      ctx.shadowBlur = 0;
       ctx.strokeStyle = "rgba(0,0,0,0.4)";
       ctx.lineWidth = 1.5;
       ctx.stroke();
+      ctx.restore();
     }
   }
+}
+
+function drawTrail() {
+  for (const t of trail) {
+    ctx.globalAlpha = Math.max(0, t.t / 0.35) * 0.35;
+    ctx.save();
+    ctx.translate(PLAYER_SCREEN_X - t.age * 90, t.y + PLAYER_SIZE / 2);
+    ctx.rotate(t.rot);
+    ctx.fillStyle = level ? level.def.c1 : "#2ee6a8";
+    ctx.fillRect(-PLAYER_SIZE / 2, -PLAYER_SIZE / 2, PLAYER_SIZE * 0.7, PLAYER_SIZE * 0.7);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawPlayer() {
@@ -458,7 +610,10 @@ function frame(now) {
     drawGroundAndBlocks();
     drawObstacles();
   }
-  if (state === "play" || state === "dead") drawPlayer();
+  if (state === "play" || state === "dead") {
+    drawTrail();
+    drawPlayer();
+  }
   drawParticles();
   if (showHitboxes && (state === "play" || state === "dead")) drawHitboxes();
 
@@ -476,6 +631,15 @@ function update(dt) {
 
   player.vy += GRAVITY * dt;
   player.y += player.vy * dt;
+
+  if (!player.onGround) {
+    trail.push({ y: player.y, rot: player.rot, t: 0.35, age: 0 });
+  }
+  for (const t of trail) {
+    t.t -= dt;
+    t.age += dt;
+  }
+  trail = trail.filter((t) => t.t > 0);
 
   const feetX1 = player.x + 4;
   const feetX2 = player.x + PLAYER_SIZE - 4;
