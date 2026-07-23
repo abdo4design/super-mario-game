@@ -147,7 +147,7 @@ function mulberry32(seed) {
   };
 }
 
-const WORLDS_COUNT = 4;
+const WORLDS_COUNT = 7;
 const LEVELS_PER_WORLD = 2;
 const POWERUP_CYCLE = ["mushroom", "star", "fireflower"];
 
