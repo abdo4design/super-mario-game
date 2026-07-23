@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Geometry Dash Lite</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="wrap">
+    <div id="canvas-container">
+      <canvas id="game" width="1024" height="576"></canvas>
+
+      <div id="hud">
+        <div id="hud-percent">0%</div>
+        <div id="hud-attempts">Attempt 1</div>
+        <div id="hud-level-name"></div>
+      </div>
+
+      <div id="title-screen" class="overlay">
+        <div class="title-box">
+          <div class="title-line">GEOMETRY</div>
+          <div class="title-line">DASH <span class="lite">LITE</span></div>
+        </div>
+        <div class="title-hint">Press ENTER or tap to select a level</div>
+      </div>
+
+      <div id="select-screen" class="overlay hidden">
+        <div class="select-title">SELECT A LEVEL</div>
+        <div id="level-grid"></div>
+        <div class="select-hint">Click a level to play &nbsp;•&nbsp; ESC to go back</div>
+      </div>
+
+      <div id="death-screen" class="overlay hidden">
+        <div class="death-text">✕</div>
+      </div>
+
+      <div id="win-screen" class="overlay hidden">
+        <div class="win-text">LEVEL COMPLETE!</div>
+        <div class="win-hint">Press ENTER for level select</div>
+      </div>
+    </div>
+
+    <div id="controls-hint">
+      Space / Up / Click / Tap to jump &nbsp;•&nbsp; Touch anything sharp and you're done &nbsp;•&nbsp; P to pause &nbsp;•&nbsp; M to mute &nbsp;•&nbsp; H to show hitboxes
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
