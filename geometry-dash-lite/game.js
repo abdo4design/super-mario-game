@@ -70,27 +70,27 @@ const MAX_BLOCK_HEIGHT = Math.min(96, APEX_HEIGHT * 0.7);
 
 // ------------------------------------------------------------ Level defs --
 const LEVEL_DEFS = [
-  { name: "Stereo Madness", diff: "Easy", c1: "#2ee6a8", c2: "#0e6b52" },
-  { name: "Back On Track", diff: "Easy", c1: "#3fa9ff", c2: "#0b3f6b" },
-  { name: "Polargeist", diff: "Normal", c1: "#b06bff", c2: "#3b1466" },
-  { name: "Dry Out", diff: "Normal", c1: "#ff9a3f", c2: "#6b3a0b" },
-  { name: "Base After Base", diff: "Normal", c1: "#ff5252", c2: "#5c0d0d" },
-  { name: "Can't Let Go", diff: "Normal", c1: "#ff5cb8", c2: "#661038" },
-  { name: "Jumper", diff: "Normal", c1: "#ffe94e", c2: "#665c0b" },
-  { name: "Time Machine", diff: "Normal", c1: "#4ee1ff", c2: "#0b5766" },
-  { name: "Cycles", diff: "Normal", c1: "#a06bff", c2: "#331a66" },
-  { name: "xStep", diff: "Normal", c1: "#6b7dff", c2: "#171a66" },
-  { name: "Clutterfunk", diff: "Normal", c1: "#ff4ee1", c2: "#660b52" },
-  { name: "Theory of Everything", diff: "Normal", c1: "#4e6dff", c2: "#0b1466" },
-  { name: "Electroman Adventures", diff: "Normal", c1: "#4ecbff", c2: "#0b3966" },
-  { name: "Clubstep", diff: "Harder", c1: "#8a4eff", c2: "#150029" },
-  { name: "Electrodynamix", diff: "Hard", c1: "#4eff8a", c2: "#0a3319" },
-  { name: "Hexagon Force", diff: "Hard", c1: "#ff6b4e", c2: "#661f0b" },
-  { name: "Blast Processing", diff: "Hard", c1: "#4e8aff", c2: "#0b1e66" },
-  { name: "Theory of Everything 2", diff: "Harder", c1: "#4effe1", c2: "#0b3f39" },
-  { name: "Geometrical Dominator", diff: "Harder", c1: "#ffcf4e", c2: "#664d0b" },
-  { name: "Deadlocked", diff: "Insane", c1: "#ff4e4e", c2: "#1a0303" },
-  { name: "Fingerdash", diff: "Harder", c1: "#ff4ecb", c2: "#3b0b30" },
+  { name: "Stereo Madness", diff: "Easy Demon", c1: "#2ee6a8", c2: "#0e6b52" },
+  { name: "Back On Track", diff: "Easy Demon", c1: "#3fa9ff", c2: "#0b3f6b" },
+  { name: "Polargeist", diff: "Easy Demon", c1: "#b06bff", c2: "#3b1466" },
+  { name: "Dry Out", diff: "Easy Demon", c1: "#ff9a3f", c2: "#6b3a0b" },
+  { name: "Base After Base", diff: "Medium Demon", c1: "#ff5252", c2: "#5c0d0d" },
+  { name: "Can't Let Go", diff: "Medium Demon", c1: "#ff5cb8", c2: "#661038" },
+  { name: "Jumper", diff: "Medium Demon", c1: "#ffe94e", c2: "#665c0b" },
+  { name: "Time Machine", diff: "Medium Demon", c1: "#4ee1ff", c2: "#0b5766" },
+  { name: "Cycles", diff: "Medium Demon", c1: "#a06bff", c2: "#331a66" },
+  { name: "xStep", diff: "Hard Demon", c1: "#6b7dff", c2: "#171a66" },
+  { name: "Clutterfunk", diff: "Hard Demon", c1: "#ff4ee1", c2: "#660b52" },
+  { name: "Theory of Everything", diff: "Hard Demon", c1: "#4e6dff", c2: "#0b1466" },
+  { name: "Electroman Adventures", diff: "Hard Demon", c1: "#4ecbff", c2: "#0b3966" },
+  { name: "Clubstep", diff: "Hard Demon", c1: "#8a4eff", c2: "#150029" },
+  { name: "Electrodynamix", diff: "Extreme Demon", c1: "#4eff8a", c2: "#0a3319" },
+  { name: "Hexagon Force", diff: "Extreme Demon", c1: "#ff6b4e", c2: "#661f0b" },
+  { name: "Blast Processing", diff: "Extreme Demon", c1: "#4e8aff", c2: "#0b1e66" },
+  { name: "Theory of Everything 2", diff: "Extreme Demon", c1: "#4effe1", c2: "#0b3f39" },
+  { name: "Geometrical Dominator", diff: "Impossible Demon", c1: "#ffcf4e", c2: "#664d0b" },
+  { name: "Deadlocked", diff: "Impossible Demon", c1: "#ff4e4e", c2: "#1a0303" },
+  { name: "Fingerdash", diff: "Impossible Demon", c1: "#ff4ecb", c2: "#3b0b30" },
 ].map((d, i) => ({ ...d, id: i + 1 }));
 
 // Builds an original, seeded, procedurally-generated obstacle course for a
@@ -211,9 +211,10 @@ try {
   bestPercent = {};
 }
 
-const player = { x: 0, y: GROUND_Y - PLAYER_SIZE, vy: 0, onGround: true, rot: 0 };
+const player = { x: 0, y: GROUND_Y - PLAYER_SIZE, vy: 0, onGround: true, rot: 0, dustTimer: 0 };
 let particles = [];
 let trail = [];
+let dust = [];
 let wantJump = false;
 let paused = false;
 
@@ -226,6 +227,8 @@ function resetPlayer() {
   camX = 0;
   particles = [];
   trail = [];
+  dust = [];
+  player.dustTimer = 0;
 }
 
 function startLevel(idx) {
@@ -399,8 +402,20 @@ function drawBackground() {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
-  // parallax stripes
-  ctx.globalAlpha = 0.12;
+  // slow pulsing glow orb, drifting gently side to side
+  const orbX = VIEW_W * 0.78 + Math.sin(elapsed * 0.15) * 60;
+  const orbY = VIEW_H * 0.22 + Math.cos(elapsed * 0.1) * 20;
+  const orbPulse = 0.55 + Math.sin(elapsed * 0.8) * 0.15;
+  const orbR = 150;
+  const orbAlphaHex = Math.round(orbPulse * 70).toString(16).padStart(2, "0");
+  const orbGrad = ctx.createRadialGradient(orbX, orbY, 0, orbX, orbY, orbR);
+  orbGrad.addColorStop(0, c1 + orbAlphaHex);
+  orbGrad.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = orbGrad;
+  ctx.fillRect(orbX - orbR, orbY - orbR, orbR * 2, orbR * 2);
+
+  // parallax stripes with a gentle opacity pulse
+  ctx.globalAlpha = 0.1 + Math.sin(elapsed * 0.6) * 0.03;
   ctx.fillStyle = c1;
   const stripeW = 60;
   const offset = (camX * 0.3) % (stripeW * 2);
@@ -490,6 +505,20 @@ function drawGroundAndBlocks() {
       ctx.fillRect(sx, topScreenY, w, 6);
       ctx.fillStyle = "rgba(255,255,255,0.4)";
       ctx.fillRect(sx, topScreenY + 6, w, 2);
+
+      // small zigzag "teeth" strip just under the surface, purely cosmetic
+      ctx.fillStyle = "rgba(0,0,0,0.22)";
+      const toothW = 16;
+      const toothStart = Math.floor((f.x1 - camX + PLAYER_SCREEN_X) / toothW) * toothW;
+      for (let tx = toothStart; tx < sx + w; tx += toothW) {
+        if (tx < sx) continue;
+        ctx.beginPath();
+        ctx.moveTo(tx, topScreenY + 8);
+        ctx.lineTo(tx + toothW / 2, topScreenY + 16);
+        ctx.lineTo(tx + toothW, topScreenY + 8);
+        ctx.closePath();
+        ctx.fill();
+      }
     }
   }
 }
@@ -563,6 +592,15 @@ function drawParticles() {
   ctx.globalAlpha = 1;
 }
 
+function drawDust() {
+  for (const d of dust) {
+    ctx.globalAlpha = Math.max(0, d.t / 0.4) * 0.35;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(d.x - camX + PLAYER_SCREEN_X - 2, d.y - 2, 4, 4);
+  }
+  ctx.globalAlpha = 1;
+}
+
 // Debug overlay (toggle with H): draws the actual collision boxes used by
 // die(), which are smaller/tighter than the drawn sprites, so it's clear
 // exactly what counts as a hit.
@@ -598,9 +636,11 @@ function rectsOverlap(a, b) {
 }
 
 let lastTime = performance.now();
+let elapsed = 0;
 function frame(now) {
   let dt = Math.min(0.033, (now - lastTime) / 1000);
   lastTime = now;
+  elapsed += dt;
   requestAnimationFrame(frame);
 
   if (state === "play" && !paused) update(dt);
@@ -611,6 +651,7 @@ function frame(now) {
     drawObstacles();
   }
   if (state === "play" || state === "dead") {
+    drawDust();
     drawTrail();
     drawPlayer();
   }
@@ -707,6 +748,17 @@ function update(dt) {
     p.t -= dt;
   }
   particles = particles.filter((p) => p.t > 0);
+
+  // Small dust kicked up behind the cube while it's grounded and moving.
+  if (player.onGround) {
+    player.dustTimer -= dt;
+    if (player.dustTimer <= 0) {
+      dust.push({ x: player.x + 4, y: GROUND_Y - 2, t: 0.4 });
+      player.dustTimer = 0.05;
+    }
+  }
+  for (const d of dust) d.t -= dt;
+  dust = dust.filter((d) => d.t > 0);
 
   if (camX >= level.length - VIEW_W + PLAYER_SCREEN_X - 20) {
     win();
