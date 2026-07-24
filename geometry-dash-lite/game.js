@@ -260,6 +260,7 @@ function hideAllOverlays() {
 function showSelect() {
   state = "select";
   hideAllOverlays();
+  buildLevelGrid();
   selectScreen.classList.remove("hidden");
   exitBtn.classList.add("hidden");
 }
